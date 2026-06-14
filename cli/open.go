@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/tamnd/kage/pack"
+	"github.com/tamnd/kage/viewer"
 	"github.com/tamnd/kage/zim"
 )
 
@@ -46,17 +47,19 @@ func runOpen(ctx context.Context, path, addr string, openBrowser bool) error {
 
 	fmt.Fprintln(os.Stderr, styleTitle.Render("kage open")+" "+styleDim.Render(path))
 	fmt.Fprintln(os.Stderr, "  open "+styleAccent.Render(url))
-	fmt.Fprintln(os.Stderr, styleDim.Render("  press Ctrl-C to stop"))
-	if openBrowser {
-		_ = pack.OpenInBrowser(url)
+	if viewer.Native {
+		fmt.Fprintln(os.Stderr, styleDim.Render("  close the window to stop"))
+	} else {
+		fmt.Fprintln(os.Stderr, styleDim.Render("  press Ctrl-C to stop"))
 	}
 
 	srv := &http.Server{Handler: pack.Handler(r)}
-	go func() {
-		<-ctx.Done()
-		_ = srv.Close()
-	}()
-	if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
+	srvErr := make(chan error, 1)
+	go func() { srvErr <- srv.Serve(ln) }()
+
+	_ = viewer.Show(ctx, viewer.Options{Title: archiveTitle(r), URL: url, Browser: openBrowser})
+	_ = srv.Close()
+	if err := <-srvErr; err != nil && err != http.ErrServerClosed {
 		return err
 	}
 	return nil

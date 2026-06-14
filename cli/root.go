@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/tamnd/kage/pack"
+	"github.com/tamnd/kage/viewer"
 	"github.com/tamnd/kage/zim"
 )
 
@@ -60,9 +61,10 @@ func newRoot() *cobra.Command {
 }
 
 // runEmbeddedViewer serves the ZIM appended to this executable on an ephemeral
-// local port and opens the browser. It runs until the context is cancelled
-// (Ctrl-C) and ignores all command-line arguments: a packed binary is the site,
-// not the kage CLI.
+// local port and shows it: a native window in the webview build, the system
+// browser otherwise. It runs until the viewer closes or the context is
+// cancelled (Ctrl-C) and ignores all command-line arguments, because a packed
+// binary is the site, not the kage CLI.
 func runEmbeddedViewer(ctx context.Context, ra io.ReaderAt, size int64) int {
 	r, err := zim.NewReader(ra, size)
 	if err != nil {
@@ -75,17 +77,32 @@ func runEmbeddedViewer(ctx context.Context, ra io.ReaderAt, size int64) int {
 		return 1
 	}
 	url := "http://" + ln.Addr().String()
-	fmt.Fprintln(os.Stderr, "serving offline site at "+url+"  (Ctrl-C to stop)")
-	_ = pack.OpenInBrowser(url)
+	if viewer.Native {
+		fmt.Fprintln(os.Stderr, "opening offline site (close the window to stop)")
+	} else {
+		fmt.Fprintln(os.Stderr, "serving offline site at "+url+"  (Ctrl-C to stop)")
+	}
 
 	srv := &http.Server{Handler: pack.Handler(r)}
-	go func() {
-		<-ctx.Done()
-		_ = srv.Close()
-	}()
-	if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
+	srvErr := make(chan error, 1)
+	go func() { srvErr <- srv.Serve(ln) }()
+
+	// Show blocks until the window closes (native) or ctx is cancelled (browser);
+	// either way, tear the server down afterwards.
+	_ = viewer.Show(ctx, viewer.Options{Title: archiveTitle(r), URL: url, Browser: true})
+	_ = srv.Close()
+	if err := <-srvErr; err != nil && err != http.ErrServerClosed {
 		fmt.Fprintln(os.Stderr, "kage:", err)
 		return 1
 	}
 	return 0
+}
+
+// archiveTitle returns the archive's M/Title metadata for use as a window
+// title, falling back to the empty string (viewer defaults it to "kage").
+func archiveTitle(r *zim.Reader) string {
+	if b, err := r.Get(zim.NamespaceMetadata, "Title"); err == nil {
+		return string(b.Data)
+	}
+	return ""
 }

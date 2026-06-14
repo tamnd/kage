@@ -121,3 +121,7 @@ of `kage pack --format zim`.
 |------|---------|---------|
 | `-a, --addr` | `127.0.0.1:8800` | Address to listen on |
 | `--open` | `true` | Open the default browser (`--open=false` to skip) |
+
+Built with `-tags webview` (which needs cgo), `kage open` shows the archive in a
+native window instead of the browser, and `--open` no longer applies. The default
+`CGO_ENABLED=0` build uses the browser.

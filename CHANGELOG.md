@@ -17,6 +17,12 @@ All notable changes to kage are recorded here. The format follows
   `--no-compress`.
 - `kage open <file.zim>` serves a packed ZIM over a local HTTP server and opens
   your browser, the read side of `kage pack --format zim`.
+- An optional native-window viewer. Built with `-tags webview` (which needs
+  cgo), `kage open` and a packed binary present the offline site in a real
+  window backed by the operating system's WebView (WKWebView, WebView2,
+  WebKitGTK) instead of a browser tab, so a packed kage feels like a standalone
+  app. The default build stays pure Go (`CGO_ENABLED=0`) and falls back to the
+  system browser, so the release pipeline is unchanged.
 - A pure-Go `zim` package that writes and reads the ZIM format: a fixed header,
   MIME and pointer lists, zstd-compressed (or stored) clusters, redirects, and a
   trailing MD5. It reads xz clusters so archives from other tooling open, and

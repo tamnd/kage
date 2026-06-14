@@ -168,6 +168,15 @@ make test           # full suite, including Chrome-driven end-to-end tests
 make test-short     # skip the tests that launch a browser
 ```
 
+By default kage is pure Go (`CGO_ENABLED=0`) and a packed binary opens the system
+browser. Build with the `webview` tag for a native-window viewer that shows a
+packed site in its own window, backed by the OS WebView, instead of a browser
+tab:
+
+```bash
+CGO_ENABLED=1 go build -tags webview -o bin/kage ./cmd/kage
+```
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

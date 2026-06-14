@@ -3,8 +3,6 @@ package pack
 import (
 	"errors"
 	"net/http"
-	"os/exec"
-	"runtime"
 	"strings"
 
 	"github.com/tamnd/kage/zim"
@@ -44,19 +42,4 @@ func serveBlob(w http.ResponseWriter, b zim.Blob) {
 		w.Header().Set("Content-Type", b.MimeType)
 	}
 	_, _ = w.Write(b.Data)
-}
-
-// OpenInBrowser launches the platform default browser at url. It is best-effort:
-// callers print the url regardless and never treat a launch failure as fatal.
-func OpenInBrowser(url string) error {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "darwin":
-		cmd = exec.Command("open", url)
-	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
-	default:
-		cmd = exec.Command("xdg-open", url)
-	}
-	return cmd.Start()
 }

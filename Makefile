@@ -10,10 +10,16 @@ LDFLAGS := -s -w \
 
 export CGO_ENABLED := 0
 
-.PHONY: build install test test-short vet tidy clean run
+.PHONY: build build-webview install test test-short vet tidy clean run
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o bin/$(BIN) $(PKG)
+
+# A native-window viewer: opens packed sites in their own OS WebView window
+# instead of the browser. Needs cgo, so it is built separately from the default
+# pure-Go binary and the release pipeline.
+build-webview:
+	CGO_ENABLED=1 go build -tags webview -ldflags "$(LDFLAGS)" -o bin/$(BIN) $(PKG)
 
 install:
 	go install -ldflags "$(LDFLAGS)" $(PKG)

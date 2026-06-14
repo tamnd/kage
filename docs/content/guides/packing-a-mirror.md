@@ -85,6 +85,25 @@ serving offline site at http://127.0.0.1:52431  (Ctrl-C to stop)
 The binary carries a full kage, so it is tens of megabytes regardless of site
 size; the trade is that the recipient needs nothing installed, not even kage.
 
+### A native window instead of a browser
+
+By default the viewer opens the system browser, which means a tab with an address
+bar and your other tabs alongside. Build kage with the `webview` tag and it opens
+the site in its own native window instead, backed by the operating system's
+WebView (WKWebView on macOS, WebView2 on Windows, WebKitGTK on Linux), so a
+packed binary feels like a standalone app:
+
+```bash
+CGO_ENABLED=1 go build -tags webview -o kage ./cmd/kage
+kage pack kage-out/example.com --format binary --base kage
+./example   # opens a window, no browser
+```
+
+The window title comes from the archive's title. This build needs cgo and links
+the platform WebView, so it is opt-in and kept out of the default
+`CGO_ENABLED=0` release; the prebuilt binaries open the browser. `kage open` honours
+the same tag: built with `-tags webview` it shows the ZIM in a native window too.
+
 ### Build a viewer for another platform
 
 The appended archive is platform-independent; only the base executable carries
