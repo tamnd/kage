@@ -43,13 +43,51 @@ builds:
       - freebsd_amd64
       - freebsd_arm64
 
+  # A second Windows build linked for the GUI subsystem (-H windowsgui). It is
+  # the same pure-Go kage, but a viewer packed onto it shows only its window when
+  # double-clicked, with no console flashing behind it. Users point `kage pack
+  # --base` at this to build a clean double-click Windows app. The default build
+  # above stays console-attached so the CLI still prints clone progress.
+  - id: kage-gui
+    binary: kage
+    main: ./cmd/kage
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -H=windowsgui
+      - -X github.com/tamnd/kage/cli.Version={{ .Version }}
+      - -X github.com/tamnd/kage/cli.Commit={{ .ShortCommit }}
+      - -X github.com/tamnd/kage/cli.Date={{ .CommitDate }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    targets:
+      - windows_amd64
+      - windows_arm64
+
 archives:
-  # tar.gz everywhere except a zip on Windows.
+  # tar.gz everywhere except a zip on Windows. Scoped to the console build so
+  # this is the archive every package manager installs.
   - id: default
+    ids:
+      - kage
     name_template: "kage_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}"
     format_overrides:
       - goos: windows
         formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+
+  # A separate zip for the GUI-subsystem Windows binary, named so it cannot be
+  # confused with the console build. It is a base to pack against, not something
+  # to run directly, so no package manager points at it.
+  - id: windows-gui
+    ids:
+      - kage-gui
+    name_template: "kage_{{ .Version }}_windows-gui_{{ .Arch }}"
+    formats: [zip]
     files:
       - LICENSE
       - README.md
@@ -61,6 +99,8 @@ nfpms:
   # dependency the user supplies (or the container image bundles).
   - id: linux-packages
     package_name: kage
+    ids:
+      - kage
     file_name_template: "{{ .ConventionalFileName }}"
     vendor: tamnd
     homepage: https://github.com/tamnd/kage
@@ -106,6 +146,8 @@ homebrew_casks:
   # HOMEBREW_TAP_GITHUB_TOKEN (a PAT with write to tamnd/homebrew-tap) is set,
   # so a tokenless release still writes the cask into dist for inspection.
   - name: kage
+    ids:
+      - default
     repository:
       owner: tamnd
       name: homebrew-tap
@@ -119,8 +161,11 @@ homebrew_casks:
       email: tamnd87@gmail.com
 
 scoops:
-  # Scoop manifest for Windows, pushed to the bucket repository.
-  - repository:
+  # Scoop manifest for Windows, pushed to the bucket repository. It installs the
+  # console build (the CLI), not the GUI base.
+  - ids:
+      - default
+    repository:
       owner: tamnd
       name: scoop-bucket
       token: '{{ envOrDefault "SCOOP_BUCKET_GITHUB_TOKEN" "" }}'

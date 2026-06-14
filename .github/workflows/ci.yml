@@ -125,3 +125,22 @@ jobs:
           cache: true
       - name: build webview viewer
         run: CGO_ENABLED=1 go build -tags webview ./cmd/kage
+
+  # Cross-compile the GUI-subsystem Windows base the release ships for
+  # double-click viewers (kage pack --base). A change that breaks the
+  # -H windowsgui link is caught here instead of at release time. Pure Go, so it
+  # cross-compiles from Linux with no extra toolchain.
+  windows-gui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          check-latest: true
+          cache: true
+      - name: build windowsgui base
+        env:
+          GOOS: windows
+          CGO_ENABLED: "0"
+        run: go build -ldflags "-H=windowsgui" -o kage-windowsgui.exe ./cmd/kage
