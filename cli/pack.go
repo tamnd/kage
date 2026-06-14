@@ -2,7 +2,9 @@ package cli
 
 import (
 	"fmt"
+	"image"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -19,6 +21,7 @@ type packFlags struct {
 	format      string
 	out         string
 	base        string
+	icon        string
 	noCompress  bool
 	title       string
 	description string
@@ -34,16 +37,19 @@ func newPackCmd() *cobra.Command {
 		Long: "pack turns a cloned folder into one distributable file. With --format zim\n" +
 			"it writes an open ZIM archive (the format Kiwix uses) that kage open or any\n" +
 			"ZIM reader can browse. With --format binary it appends that archive to a copy\n" +
-			"of kage, producing a single executable that serves the site offline when run.",
+			"of kage, producing a single executable that serves the site offline when run.\n" +
+			"With --format app it wraps that executable in a macOS .app you can double-click,\n" +
+			"with the site's favicon as the icon.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPack(args[0], f)
 		},
 	}
 	fs := cmd.Flags()
-	fs.StringVar(&f.format, "format", "zim", "output format: zim or binary")
+	fs.StringVar(&f.format, "format", "zim", "output format: zim, binary, or app")
 	fs.StringVarP(&f.out, "out", "o", "", "output path (default per format)")
-	fs.StringVar(&f.base, "base", "", "base kage binary for --format binary (default this kage)")
+	fs.StringVar(&f.base, "base", "", "base kage binary for binary/app (default this kage)")
+	fs.StringVar(&f.icon, "icon", "", "icon file for --format app (default the site's favicon)")
 	fs.BoolVar(&f.noCompress, "no-compress", false, "store every cluster raw, no zstd")
 	fs.StringVar(&f.title, "title", "", "archive title (default the main page's <title>)")
 	fs.StringVar(&f.description, "description", "", "archive description")
@@ -97,9 +103,194 @@ func runPack(mirrorArg string, f *packFlags) error {
 		printRunHint(path, target)
 		return nil
 
+	case "app":
+		return runPackApp(dir, f, zopts)
+
 	default:
-		return fmt.Errorf("unknown --format %q (want zim or binary)", f.format)
+		return fmt.Errorf("unknown --format %q (want zim, binary, or app)", f.format)
 	}
+}
+
+// runPackApp builds a double-clickable desktop app around the packed viewer,
+// shaped for whichever OS the base targets: a .app bundle on macOS, an
+// AppImage-style .AppDir on Linux. Windows needs no bundle (the .exe is the
+// app), so it is redirected to --format binary with a GUI base.
+func runPackApp(dir string, f *packFlags, zopts pack.ZIMOptions) error {
+	target := resolveTargetOS(f.base)
+	switch target {
+	case "windows":
+		return fmt.Errorf("a Windows app is just the .exe, with no bundle to build: use --format binary and a GUI base (kage built with -ldflags -H=windowsgui)")
+	case "":
+		if f.base != "" {
+			return fmt.Errorf("--format app could not tell which OS %q is for; pass a macOS or Linux kage as --base", f.base)
+		}
+		// No base and an unknown runtime: fall through with the host's GOOS.
+		target = runtime.GOOS
+	}
+
+	prog := defaultBinaryName(dir)
+	name := f.title
+	if name == "" {
+		name = prog
+	}
+	icon, iconSrc, err := resolveIcon(dir, f.icon)
+	if err != nil {
+		return err
+	}
+	zbytes, err := pack.BuildZIMBytes(dir, zopts)
+	if err != nil {
+		return err
+	}
+
+	switch target {
+	case "darwin":
+		return packMacApp(zbytes, dir, f, prog, name, icon, iconSrc)
+	case "linux":
+		return packLinuxApp(zbytes, dir, f, prog, name, icon, iconSrc)
+	default:
+		return fmt.Errorf("--format app supports macOS and Linux bases; %s is not one of them", osLabel(target))
+	}
+}
+
+// packMacApp writes the .app bundle and prints how to launch it.
+func packMacApp(zbytes []byte, dir string, f *packFlags, prog, name string, icon image.Image, iconSrc string) error {
+	out := f.out
+	if out == "" {
+		out = prog + ".app"
+	} else if !strings.HasSuffix(strings.ToLower(out), ".app") {
+		out += ".app"
+	}
+	path, size, err := pack.BuildApp(zbytes, pack.AppOptions{
+		Out:        out,
+		Base:       f.base,
+		Name:       name,
+		ExecName:   prog,
+		Identifier: bundleID(prog),
+		Version:    appVersion(),
+		Icon:       icon,
+	})
+	if err != nil {
+		return err
+	}
+	printPackResult(path, size)
+	printIconLine(iconSrc)
+	fmt.Fprintf(os.Stderr, "  double-click %s to open the site offline\n", styleAccent.Render(filepath.Base(path)))
+	if f.base == "" {
+		fmt.Fprintln(os.Stderr, styleDim.Render("  (built around this kage; pass --base a webview build to open a native window instead of the browser)"))
+	}
+	fmt.Fprintln(os.Stderr, styleDim.Render("  (macOS may quarantine it: xattr -dr com.apple.quarantine "+path+")"))
+	return nil
+}
+
+// packLinuxApp writes the .AppDir and, when appimagetool is installed, folds it
+// into a single double-clickable .AppImage.
+func packLinuxApp(zbytes []byte, dir string, f *packFlags, prog, name string, icon image.Image, iconSrc string) error {
+	out := f.out
+	if out == "" {
+		out = prog + ".AppDir"
+	} else if !strings.HasSuffix(out, ".AppDir") {
+		out += ".AppDir"
+	}
+	path, size, hasIcon, err := pack.BuildAppDir(zbytes, pack.LinuxAppOptions{
+		Out:      out,
+		Base:     f.base,
+		Name:     name,
+		ExecName: prog,
+		Comment:  f.description,
+		Version:  appVersion(),
+		Icon:     icon,
+	})
+	if err != nil {
+		return err
+	}
+	printPackResult(path, size)
+	printIconLine(iconSrc)
+
+	// appimagetool turns the directory into one portable file. It needs an icon,
+	// so only attempt it when the mirror gave us one.
+	if hasIcon {
+		if img, ok := tryAppImage(path, prog); ok {
+			fmt.Fprintf(os.Stderr, "  built %s\n", styleTitle.Render(img))
+			fmt.Fprintf(os.Stderr, "  double-click %s to open the site offline\n", styleAccent.Render(filepath.Base(img)))
+			return nil
+		}
+	}
+	fmt.Fprintf(os.Stderr, "  run %s to open the site offline\n", styleAccent.Render("./"+filepath.Join(filepath.Base(path), "AppRun")))
+	fmt.Fprintln(os.Stderr, styleDim.Render("  (install appimagetool to fold this .AppDir into one double-clickable .AppImage)"))
+	return nil
+}
+
+// tryAppImage runs appimagetool over the AppDir if it is installed, returning
+// the .AppImage path on success. A missing tool or a build failure is not fatal:
+// the caller falls back to the AppDir.
+func tryAppImage(appDir, prog string) (string, bool) {
+	tool, err := exec.LookPath("appimagetool")
+	if err != nil {
+		return "", false
+	}
+	out := prog + ".AppImage"
+	cmd := exec.Command(tool, appDir, out)
+	// appimagetool reads the target arch from the AppRun ELF; suppress its noisy
+	// progress so kage's own output stays clean, but surface a real failure.
+	if err := cmd.Run(); err != nil {
+		return "", false
+	}
+	if _, err := os.Stat(out); err != nil {
+		return "", false
+	}
+	return out, true
+}
+
+func printIconLine(iconSrc string) {
+	if iconSrc != "" {
+		fmt.Fprintf(os.Stderr, "  icon %s\n", styleDim.Render(iconSrc))
+	}
+}
+
+// resolveIcon picks the bundle icon: an explicit --icon path if given (an error
+// there is fatal, since the user asked for that file), otherwise the site's
+// favicon discovered in the mirror. A mirror with no usable icon is fine; the
+// bundle just ships without a custom one.
+func resolveIcon(dir, iconFlag string) (img image.Image, src string, err error) {
+	if iconFlag != "" {
+		img, err = pack.DecodeIcon(iconFlag)
+		if err != nil {
+			return nil, "", err
+		}
+		return img, iconFlag, nil
+	}
+	if img, src, ok := pack.FindIcon(dir); ok {
+		return img, src, nil
+	}
+	return nil, "", nil
+}
+
+// bundleID builds a reverse-DNS CFBundleIdentifier from the program name,
+// keeping only characters Apple allows in an identifier.
+func bundleID(prog string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(prog) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '-':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('-')
+		}
+	}
+	id := strings.Trim(b.String(), "-")
+	if id == "" {
+		id = "app"
+	}
+	return "com.kage." + id
+}
+
+// appVersion uses kage's own version for the bundle, falling back to 1.0 for a
+// dev build whose version is the default "dev".
+func appVersion() string {
+	if Version == "" || Version == "dev" {
+		return "1.0"
+	}
+	return strings.TrimPrefix(Version, "v")
 }
 
 // resolveMirror accepts either a path to a mirror dir or a bare host. A bare
