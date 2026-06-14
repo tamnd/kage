@@ -12,11 +12,11 @@ when served from the root of a host. `kage serve` gives you that root.
 ## Serve a clone
 
 ```bash
-kage serve kage-out/example.com
+kage serve $HOME/data/kage/example.com
 ```
 
 ```
-kage serve /…/kage-out/example.com
+kage serve $HOME/data/kage/example.com
   open http://127.0.0.1:8800
   press Ctrl-C to stop
 ```
@@ -31,10 +31,10 @@ By default kage serves on `127.0.0.1:8800`. Change it with `--addr`:
 
 ```bash
 # A different port
-kage serve kage-out/example.com --addr 127.0.0.1:9000
+kage serve $HOME/data/kage/example.com --addr 127.0.0.1:9000
 
 # Reachable from other machines on your network (be deliberate about this)
-kage serve kage-out/example.com --addr 0.0.0.0:8800
+kage serve $HOME/data/kage/example.com --addr 0.0.0.0:8800
 ```
 
 ## Serve the current directory
@@ -43,6 +43,6 @@ With no argument, `kage serve` serves the current directory, which is handy from
 inside an output folder:
 
 ```bash
-cd kage-out/example.com
+cd $HOME/data/kage/example.com
 kage serve
 ```

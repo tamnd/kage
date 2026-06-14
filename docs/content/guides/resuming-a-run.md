@@ -37,7 +37,7 @@ existing host folder first with `--force`:
 kage clone example.com --force
 ```
 
-This removes `kage-out/example.com/` before crawling, so nothing from a prior run
+This removes `$HOME/data/kage/example.com/` before crawling, so nothing from a prior run
 carries over.
 
 To run without reading or writing any resume state at all, for a strictly

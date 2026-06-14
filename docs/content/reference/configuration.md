@@ -24,7 +24,7 @@ A clone of `example.com` lands under `$HOME/data/kage/example.com/` (override th
 root with `-o/--out`):
 
 ```
-kage-out/example.com/
+$HOME/data/kage/example.com/
 ├── index.html                  # the home page (/), scripts stripped
 ├── about/index.html            # /about
 ├── blog/

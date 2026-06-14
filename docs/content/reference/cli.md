@@ -8,8 +8,9 @@ weight: 10
 kage [command] [flags]
 ```
 
-Two commands: `clone` fetches a site into an offline folder, `serve` previews
-one. Run `kage <command> --help` for the canonical, up-to-date list.
+Four commands: `clone` fetches a site into an offline folder, `serve` previews
+one, `pack` collapses a mirror into a single file, and `open` serves a packed
+file. Run `kage <command> --help` for the canonical, up-to-date list.
 
 ## kage clone
 
@@ -84,3 +85,43 @@ current directory.
 | Flag | Default | Meaning |
 |------|---------|---------|
 | `-a, --addr` | `127.0.0.1:8800` | Address to listen on |
+
+## kage pack
+
+```
+kage pack <mirror-dir> [flags]
+```
+
+Packs a cloned mirror into one distributable file: an open ZIM archive, or a
+self-contained executable that serves the site offline when run. A bare host name
+is resolved against the default output directory, so `kage pack example.com`
+works right after `kage clone example.com`.
+
+| Flag | Default | Meaning |
+|------|---------|---------|
+| `--format` | `zim` | Output format: `zim` or `binary` |
+| `-o, --out` | per format | Output path; `<host>.zim` for zim, `<host>` (or `<host>.exe`) for binary |
+| `--base` | this kage | Base kage binary to append to (`--format binary`); point at another platform's binary to build a viewer for it |
+| `--no-compress` | `false` | Store every cluster raw, no zstd |
+| `--title` | main page `<title>` | Archive title |
+| `--description` | | Archive description |
+| `--language` | `eng` | Archive language code |
+| `--date` | today | Archive date (`YYYY-MM-DD`); pass a fixed value for a reproducible file |
+
+## kage open
+
+```
+kage open <file.zim> [flags]
+```
+
+Serves a packed ZIM over a local HTTP server for offline reading, the read side
+of `kage pack --format zim`.
+
+| Flag | Default | Meaning |
+|------|---------|---------|
+| `-a, --addr` | `127.0.0.1:8800` | Address to listen on |
+| `--open` | `true` | Open the default browser (`--open=false` to skip) |
+
+Built with `-tags webview` (which needs cgo), `kage open` shows the archive in a
+native window instead of the browser, and `--open` no longer applies. The default
+`CGO_ENABLED=0` build uses the browser.

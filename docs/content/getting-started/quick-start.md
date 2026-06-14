@@ -19,15 +19,15 @@ errors as it goes; the final summary tells you where the mirror landed.
 
 ```
 kage cloning https://example.com
-done kage-out/example.com
+done $HOME/data/kage/example.com
   pages 12   assets 38
-  open kage serve kage-out/example.com
+  open kage serve $HOME/data/kage/example.com
 ```
 
 ## 2. Look at what landed
 
 ```bash
-ls kage-out/example.com
+ls $HOME/data/kage/example.com
 ```
 
 ```
@@ -46,7 +46,7 @@ serve` runs a local static server so everything resolves exactly as it would
 live:
 
 ```bash
-kage serve kage-out/example.com
+kage serve $HOME/data/kage/example.com
 # open http://127.0.0.1:8800
 ```
 
