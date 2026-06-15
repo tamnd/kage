@@ -6,6 +6,13 @@ weight: 40
 
 The authoritative, commit-level history lives in [`CHANGELOG.md`](https://github.com/tamnd/kage/blob/main/CHANGELOG.md) and on the [releases page](https://github.com/tamnd/kage/releases). This page summarises each version.
 
+## v0.2.1
+
+Packed ZIM archives now carry the metadata Kiwix expects, so a mirror shows up in a ZIM reader's library with a title, a description, and an icon instead of as a blank entry.
+
+- **Mandatory metadata is always written.** Every archive now gets a `Name` and a `Description` (a line derived from the host when `--description` is not given), the two fields `zimcheck` flags as missing otherwise.
+- **The favicon becomes the book icon.** When the mirror has a usable icon (an `apple-touch-icon.png`, `favicon.png`, or a PNG-based `favicon.ico`), kage rescales it to a 48x48 PNG and stores it as `Illustrator_48x48@1`, which is the icon Kiwix shows for the archive in its library. A site with no usable icon is packed without one rather than with a broken image.
+
 ## v0.2.0
 
 Double-click apps, so a packed mirror opens like a real desktop app instead of a terminal program.

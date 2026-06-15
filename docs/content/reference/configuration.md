@@ -36,7 +36,7 @@ $HOME/data/kage/example.com/
 │   │   ├── logo.png
 │   │   └── fonts/body.woff2
 │   ├── cdn.example.com/        # assets from other hosts, by host
-│   └── state.json              # visited set, for --resume
+│   └── state.json              # visited set, for resume
 └── ...
 ```
 

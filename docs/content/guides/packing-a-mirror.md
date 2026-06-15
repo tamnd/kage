@@ -41,7 +41,7 @@ kage open paulgraham.com.zim            # read it back with kage
 kiwix-serve paulgraham.com.zim          # or serve it with Kiwix at http://localhost
 ```
 
-You can also double-click the file in the [Kiwix desktop app](https://kiwix.org/en/applications/), or load it on Kiwix for Android or iOS to read your mirror on your phone. One caveat: kage writes a structurally valid archive with the standard metadata, but it does not write the full-text search index that Kiwix's own packs ship with, so browsing works everywhere while in-reader search is limited.
+You can also double-click the file in the [Kiwix desktop app](https://kiwix.org/en/applications/), or load it on Kiwix for Android or iOS to read your mirror on your phone. kage writes the metadata the format and `zimcheck` treat as mandatory, including the title, description, and the favicon Kiwix shows as the book icon in its library, so the archive shows up properly rather than as an untitled, iconless entry. One caveat: kage does not write the full-text search index that Kiwix's own packs ship with, so browsing works everywhere while in-reader search is limited.
 
 ## A self-contained binary
 
@@ -149,4 +149,6 @@ kage pack paulgraham.com \
   --date 2026-06-14
 ```
 
-`--title` defaults to the main page's `<title>`, then the host name. `--date` defaults to today; pass a fixed value for a fully reproducible file. `--no-compress` stores every cluster raw, which packs fastest and lets a reader without zstd open the result. `-o/--out` overrides the output path for either format.
+`--title` defaults to the main page's `<title>`, then the host name. `--description` defaults to a line derived from the host, since a description is mandatory metadata. `--date` defaults to today; pass a fixed value for a fully reproducible file. `--no-compress` stores every cluster raw, which packs fastest and lets a reader without zstd open the result. `-o/--out` overrides the output path for either format.
+
+Beyond these, kage fills in the rest of the mandatory metadata on its own: a unique `Name`, the `Language`, and an `Illustrator_48x48@1` icon. The icon is the site's favicon dug out of the mirror (an `apple-touch-icon.png`, `favicon.png`, or a PNG-based `favicon.ico`) and rescaled to a 48x48 PNG, the same discovery `--app` uses for the desktop icon. A site that ships only a legacy BMP `.ico` or no icon at all is packed without one rather than with a broken image.

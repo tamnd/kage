@@ -69,7 +69,6 @@ images, and fonts, and writes a browsable mirror to `<out>/<host>/`.
 | `--workers` | `4` | Concurrent page render workers |
 | `--asset-workers` | `8` | Concurrent asset download workers |
 | `--browser-pages` | `4` | Chrome page-pool size |
-| `--max-asset-mb` | `25` | Skip assets larger than N MB |
 | `--timeout` | `30s` | Per-request timeout |
 | `-q, --quiet` | `false` | Suppress per-page progress lines |
 
@@ -102,9 +101,11 @@ works right after `kage clone example.com`.
 | `--format` | `zim` | Output format: `zim` or `binary` |
 | `-o, --out` | per format | Output path; `<host>.zim` for zim, `<host>` (or `<host>.exe`) for binary |
 | `--base` | this kage | Base kage binary to append to (`--format binary`); point at another platform's binary to build a viewer for it |
+| `--app` | `false` | Wrap the viewer in a double-click desktop app (`.app` on macOS, `.AppImage`/`.AppDir` on Linux) with the site's favicon as the icon |
+| `--icon` | site favicon | Icon file for `--app`, overriding the favicon found in the mirror |
 | `--no-compress` | `false` | Store every cluster raw, no zstd |
 | `--title` | main page `<title>` | Archive title |
-| `--description` | | Archive description |
+| `--description` | host-derived line | Archive description (mandatory metadata, defaulted when unset) |
 | `--language` | `eng` | Archive language code |
 | `--date` | today | Archive date (`YYYY-MM-DD`); pass a fixed value for a reproducible file |
 
