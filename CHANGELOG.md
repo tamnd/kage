@@ -29,6 +29,17 @@ All notable changes to kage are recorded here. The format follows
   thousand are shown separately as "variants", so the live counter tracks the
   site's real size instead of being inflated by `?q=…` permutations.
 
+### Fixed
+
+- An asset URL whose query string carries a raw space is now requested with the
+  space percent-encoded, so the server gets a valid request instead of rejecting
+  it. Real sites bust a stylesheet's cache with a date, producing an href like
+  `styles/main.css?Thursday, 26-Feb-2026 16:26:41 UTC`; a browser encodes the
+  spaces before requesting, but kage was passing them through verbatim and the
+  server answered `400 Bad Request`. On a developer.apple.com crawl this was the
+  cause of the large majority of the download errors. The query is re-encoded on
+  the canonical URL, so the on-disk key matches the fixed request.
+
 ## [0.2.1] - 2026-06-15
 
 ### Added

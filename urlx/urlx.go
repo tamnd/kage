@@ -142,7 +142,57 @@ func canonical(u *url.URL, root bool) *url.URL {
 		}
 		c.Path = cleaned
 	}
+	c.RawQuery = safeRawQuery(c.RawQuery)
 	return &c
+}
+
+// safeRawQuery percent-encodes the characters a query string is not allowed to
+// carry on the wire (a space, a control byte, a non-ASCII byte) while leaving
+// everything already legal untouched, including existing %XX escapes and the
+// query sub-delimiters a cache-buster relies on (& = , ; etc.). It exists
+// because real sites emit hrefs with raw spaces in the query, e.g. a CSS link
+// busted with a date string like "?Thursday, 26-Feb-2026 16:26:41 UTC"; a
+// browser encodes the spaces before requesting, but url.Parse keeps RawQuery
+// verbatim, so without this the request line is malformed and the server
+// answers 400. Re-encoding here, on the canonical URL, fixes both the fetch and
+// the on-disk key in one place.
+func safeRawQuery(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	var b strings.Builder
+	for i := 0; i < len(raw); i++ {
+		ch := raw[i]
+		switch {
+		case ch == '%' && i+2 < len(raw) && isHex(raw[i+1]) && isHex(raw[i+2]):
+			// Already a percent-escape; copy it through unchanged.
+			b.WriteString(raw[i : i+3])
+			i += 2
+		case queryByteAllowed(ch):
+			b.WriteByte(ch)
+		default:
+			b.WriteByte('%')
+			const hexDigits = "0123456789ABCDEF"
+			b.WriteByte(hexDigits[ch>>4])
+			b.WriteByte(hexDigits[ch&0x0f])
+		}
+	}
+	return b.String()
+}
+
+// queryByteAllowed reports whether ch may appear literally in a URL query.
+// It is the RFC 3986 query grammar (pchar / "/" / "?"), which keeps the
+// sub-delims that structure a query and rejects spaces, quotes, and controls.
+func queryByteAllowed(ch byte) bool {
+	switch {
+	case ch >= 'a' && ch <= 'z', ch >= 'A' && ch <= 'Z', ch >= '0' && ch <= '9':
+		return true
+	}
+	return strings.IndexByte("-._~!$&'()*+,;=:@/?", ch) >= 0
+}
+
+func isHex(ch byte) bool {
+	return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')
 }
 
 // Key is the canonical string form used to dedup pages and assets.

@@ -61,6 +61,12 @@ func TestNormalize(t *testing.T) {
 		{"//cdn.io/x.css", "https://cdn.io/x.css", false},
 		{"HTTPS://Other.COM/Y", "https://other.com/Y", false},
 		{"sub/", "https://ex.com/docs/sub/", false},
+		// A query busted with a raw date string must come back with its spaces
+		// percent-encoded so the request line is valid, while the commas and
+		// colons a query legally carries stay as they are.
+		{"a.css?Thursday, 26-Feb-2026 16:26:41 UTC", "https://ex.com/docs/a.css?Thursday,%2026-Feb-2026%2016:26:41%20UTC", false},
+		{"b.css?v=1&t=a b", "https://ex.com/docs/b.css?v=1&t=a%20b", false},
+		{"c.css?x=%20done", "https://ex.com/docs/c.css?x=%20done", false},
 		{"#top", "", true},
 		{"javascript:void(0)", "", true},
 		{"mailto:a@b.com", "", true},
