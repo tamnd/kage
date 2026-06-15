@@ -69,6 +69,7 @@ body { background: url(../img/bg.png); }
 
 const htmlDoc = `<!doctype html><html><head>
 <link rel="stylesheet" href="/css/main.css">
+<link rel="preload stylesheet" href="/css/vp.css" as="style">
 <link rel="icon" href="/favicon.ico">
 <link rel="canonical" href="https://ex.com/canon">
 </head><body>
@@ -98,6 +99,7 @@ func TestRewriteHTML(t *testing.T) {
 
 	checks := map[string]bool{
 		`href="_kage/ex.com/css/main.css"`:                  true, // stylesheet localised
+		`href="_kage/ex.com/css/vp.css"`:                    true, // multi-value "preload stylesheet" rel localised
 		`href="_kage/ex.com/favicon.ico"`:                   true, // icon localised
 		`href="https://ex.com/canon"`:                       true, // canonical left alone
 		`href="docs/intro/index.html"`:                      true, // internal page → local

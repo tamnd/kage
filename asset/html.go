@@ -9,11 +9,26 @@ import (
 	"golang.org/x/net/html/atom"
 )
 
-// stylesheetRels are <link rel> values whose href kage downloads as an asset.
-var stylesheetRels = map[string]bool{
-	"stylesheet": true, "icon": true, "shortcut icon": true,
+// assetRels are the individual <link rel> tokens whose href kage downloads as
+// an asset. A rel attribute is a space-separated token list, so a single known
+// token in it (for example the "stylesheet" in "preload stylesheet") is enough.
+var assetRels = map[string]bool{
+	"stylesheet": true, "icon": true,
 	"apple-touch-icon": true, "apple-touch-icon-precomposed": true,
 	"mask-icon": true, "manifest": true, "preload": true, "prefetch": true,
+}
+
+// linkRelDownloadable reports whether a <link rel> names a resource kage should
+// download. It treats rel as the space-separated token list the HTML spec
+// defines, so "preload stylesheet", "shortcut icon", or a bare "stylesheet" all
+// match on a single recognised token.
+func linkRelDownloadable(rel string) bool {
+	for _, tok := range strings.Fields(strings.ToLower(rel)) {
+		if assetRels[tok] {
+			return true
+		}
+	}
+	return false
 }
 
 // RewriteHTML walks the parsed document and rewrites every resource and link
@@ -40,8 +55,7 @@ func rewriteElement(n *html.Node, base *url.URL, sink RefSink) {
 	case atom.Iframe, atom.Frame:
 		rewriteAttr(n, "src", base, sink, pageOrAsset)
 	case atom.Link:
-		rel := strings.ToLower(strings.TrimSpace(attrVal(n, "rel")))
-		if stylesheetRels[rel] {
+		if linkRelDownloadable(attrVal(n, "rel")) {
 			rewriteAttr(n, "href", base, sink, alwaysAsset)
 		}
 	case atom.Img:
