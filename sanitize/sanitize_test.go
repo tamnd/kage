@@ -107,6 +107,48 @@ func TestKeepNoscriptUnwraps(t *testing.T) {
 	}
 }
 
+func TestConditionalCommentScriptRemoved(t *testing.T) {
+	// A downlevel-hidden IE conditional comment hides a <script src> inside a
+	// single comment node, where an element-only walk never reaches it.
+	in := `<html><head>
+<!--[if lt IE 9]><script src="//oss.maxcdn.com/html5shiv/3.7.2/html5shiv.min.js"></script><![endif]-->
+</head><body><p>real</p></body></html>`
+	out, rep, err := Strip([]byte(in), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	if strings.Contains(s, "<script") || strings.Contains(s, "html5shiv") {
+		t.Errorf("conditional-comment script survived:\n%s", s)
+	}
+	if strings.Contains(s, "[if lt IE 9]") {
+		t.Errorf("conditional comment survived:\n%s", s)
+	}
+	if rep.CondCommentsRemoved != 1 {
+		t.Errorf("CondCommentsRemoved = %d, want 1", rep.CondCommentsRemoved)
+	}
+	if !strings.Contains(s, "<p>real</p>") {
+		t.Errorf("real content must survive:\n%s", s)
+	}
+}
+
+func TestConditionalCommentRevealedContentKept(t *testing.T) {
+	// The downlevel-revealed form shows its content to non-IE browsers; the
+	// content lives in sibling nodes, so only the two markers are stripped.
+	in := `<html><body><!--[if gte IE 9]><!--><span class="modern">keep me</span><!--<![endif]--></body></html>`
+	out, _, err := Strip([]byte(in), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	if !strings.Contains(s, `<span class="modern">keep me</span>`) {
+		t.Errorf("revealed content was dropped:\n%s", s)
+	}
+	if strings.Contains(s, "[if") || strings.Contains(s, "<![endif]") {
+		t.Errorf("conditional markers survived:\n%s", s)
+	}
+}
+
 func TestKeepMetaRefreshPlain(t *testing.T) {
 	in := `<html><head><meta http-equiv="refresh" content="5;url=/next"></head><body></body></html>`
 	out, _, err := Strip([]byte(in), Options{KeepMetaRefresh: true})

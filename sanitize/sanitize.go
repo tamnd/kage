@@ -2,9 +2,11 @@
 // the saved page is inert: a photograph, not a program.
 //
 // It parses with golang.org/x/net/html, walks the tree, and deletes scripts,
-// event handlers, javascript: URLs, and the dead preconnect/preload hints that
-// mean nothing offline — while leaving styles, images, fonts, forms, and all
-// semantic markup untouched so the layout survives intact.
+// event handlers, javascript: URLs, downlevel IE conditional comments (which
+// can smuggle a <script> past an element-only walk), and the dead
+// preconnect/preload hints that mean nothing offline — while leaving styles,
+// images, fonts, forms, and all semantic markup untouched so the layout
+// survives intact.
 package sanitize
 
 import (
@@ -31,13 +33,14 @@ type Options struct {
 
 // Report counts what was removed, for the run summary and for tests.
 type Report struct {
-	ScriptsRemoved     int
-	HandlersRemoved    int
-	NoscriptRemoved    int
-	NoscriptUnwrapped  int
-	JSURLsNeutralized  int
-	MetaRefreshRemoved int
-	DeadLinksRemoved   int
+	ScriptsRemoved      int
+	HandlersRemoved     int
+	NoscriptRemoved     int
+	NoscriptUnwrapped   int
+	JSURLsNeutralized   int
+	MetaRefreshRemoved  int
+	DeadLinksRemoved    int
+	CondCommentsRemoved int
 }
 
 // jsURLAttrs are attributes whose value may be a javascript: URL.
@@ -78,6 +81,18 @@ func clean(n *html.Node, opts Options, rep *Report) {
 	var next *html.Node
 	for c := n.FirstChild; c != nil; c = next {
 		next = c.NextSibling
+		if c.Type == html.CommentNode {
+			// A downlevel IE conditional comment (<!--[if lt IE 9]>...<![endif]-->)
+			// parses as one comment whose data holds raw markup — a <script src>
+			// among it. The element walk never sees that script, so drop the whole
+			// comment. Downlevel-revealed content lives in sibling nodes, not the
+			// comment data, so it is untouched.
+			if isConditionalComment(c.Data) {
+				n.RemoveChild(c)
+				rep.CondCommentsRemoved++
+			}
+			continue
+		}
 		if c.Type == html.ElementNode {
 			switch c.DataAtom {
 			case atom.Script:
@@ -173,6 +188,19 @@ func isDeadLink(n *html.Node) bool {
 		}
 	}
 	return false
+}
+
+// isConditionalComment reports whether a comment's data is a downlevel IE
+// conditional-comment marker. Both the downlevel-hidden form (the whole
+// "[if lt IE 9]>...<![endif]" in one comment) and the two markers of the
+// downlevel-revealed form ("[if gte IE 9]><!" and "<![endif]") match, so the
+// markers are stripped while any revealed content, which sits in sibling
+// nodes, stays.
+func isConditionalComment(data string) bool {
+	d := strings.TrimSpace(data)
+	return strings.HasPrefix(d, "[if") ||
+		strings.HasPrefix(d, "<![endif]") ||
+		strings.HasPrefix(d, "[endif]")
 }
 
 // unwrapNoscript replaces a <noscript> with its content. Because x/net/html
