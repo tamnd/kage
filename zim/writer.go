@@ -71,6 +71,16 @@ func (w *Writer) AddMetadata(name, value string) {
 	w.put(&entry{namespace: NamespaceMetadata, url: name, title: name, mime: "text/plain", data: []byte(value)})
 }
 
+// AddMetadataBytes adds an 'M' namespace entry with an explicit MIME, for binary
+// metadata such as Illustrator_48x48@1, the 48x48 PNG favicon Kiwix shows as the
+// archive's icon.
+func (w *Writer) AddMetadataBytes(name, mime string, data []byte) {
+	if mime == "" {
+		mime = "application/octet-stream"
+	}
+	w.put(&entry{namespace: NamespaceMetadata, url: name, title: name, mime: mime, data: data})
+}
+
 // AddRedirect adds a redirect from (namespace,url) to (targetNamespace,targetURL).
 func (w *Writer) AddRedirect(namespace byte, url, title string, targetNamespace byte, targetURL string) {
 	if title == "" {

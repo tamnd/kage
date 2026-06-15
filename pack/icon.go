@@ -15,7 +15,7 @@ import (
 	// explicitly below.
 	_ "image/gif"
 	_ "image/jpeg"
-	_ "image/png"
+	"image/png"
 )
 
 // iconNames ranks the file names sites use for their icon, best first. A large
@@ -42,6 +42,22 @@ func FindIcon(mirrorDir string) (image.Image, string, bool) {
 		}
 	}
 	return nil, "", false
+}
+
+// Favicon48 finds the mirror's icon and renders it to a 48x48 PNG, the form the
+// ZIM Illustrator_48x48@1 metadata takes and the icon Kiwix shows for the book.
+// It returns ok=false when the mirror has no usable icon, in which case the
+// archive simply ships without one rather than failing the pack.
+func Favicon48(mirrorDir string) ([]byte, bool) {
+	img, _, ok := FindIcon(mirrorDir)
+	if !ok {
+		return nil, false
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, scaleSquare(img, 48)); err != nil {
+		return nil, false
+	}
+	return buf.Bytes(), true
 }
 
 // globIcon returns every file under dir whose base name equals name, nearest the

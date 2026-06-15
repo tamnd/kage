@@ -3,6 +3,9 @@ package pack
 import (
 	"bytes"
 	"encoding/binary"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -131,6 +134,88 @@ func TestBuildZIMDeterministic(t *testing.T) {
 	bb, _ := os.ReadFile(b)
 	if !bytes.Equal(ba, bb) {
 		t.Error("same mirror produced different archives")
+	}
+}
+
+// TestBuildZIMMetadata checks the metadata zimcheck treats as mandatory: a
+// Title, Name, Language, Description, and the Illustrator_48x48@1 favicon. The
+// mirror carries a real PNG favicon so the icon path is exercised end to end.
+func TestBuildZIMMetadata(t *testing.T) {
+	host := writeMirror(t)
+
+	// Drop a 64x64 PNG favicon into the mirror so Favicon48 has something to
+	// find, decode, and rescale to 48x48.
+	icon := image.NewRGBA(image.Rect(0, 0, 64, 64))
+	for y := 0; y < 64; y++ {
+		for x := 0; x < 64; x++ {
+			icon.Set(x, y, color.RGBA{R: 0x33, G: 0x66, B: 0x99, A: 0xff})
+		}
+	}
+	var pngBuf bytes.Buffer
+	if err := png.Encode(&pngBuf, icon); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(host, "favicon.png"), pngBuf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out := filepath.Join(t.TempDir(), "meta.zim")
+	if _, _, err := BuildZIM(host, ZIMOptions{Out: out, Date: "2026-06-14", Version: "test"}); err != nil {
+		t.Fatalf("BuildZIM: %v", err)
+	}
+	r, err := zim.Open(out)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer func() { _ = r.Close() }()
+
+	wantText := map[string]string{
+		"Name":        "example.com",
+		"Language":    "eng",
+		"Description": "Offline mirror of example.com, cloned by kage.",
+	}
+	for k, want := range wantText {
+		e, err := r.Get(zim.NamespaceMetadata, k)
+		if err != nil {
+			t.Errorf("M/%s: %v", k, err)
+			continue
+		}
+		if string(e.Data) != want {
+			t.Errorf("M/%s = %q, want %q", k, e.Data, want)
+		}
+	}
+
+	// Illustrator_48x48@1 is a 48x48 PNG with an image/png MIME.
+	ill, err := r.Get(zim.NamespaceMetadata, "Illustrator_48x48@1")
+	if err != nil {
+		t.Fatalf("M/Illustrator_48x48@1: %v", err)
+	}
+	if ill.MimeType != "image/png" {
+		t.Errorf("illustrator mime = %q, want image/png", ill.MimeType)
+	}
+	img, format, err := image.Decode(bytes.NewReader(ill.Data))
+	if err != nil {
+		t.Fatalf("decode illustrator: %v", err)
+	}
+	if format != "png" {
+		t.Errorf("illustrator format = %q, want png", format)
+	}
+	if b := img.Bounds(); b.Dx() != 48 || b.Dy() != 48 {
+		t.Errorf("illustrator size = %dx%d, want 48x48", b.Dx(), b.Dy())
+	}
+
+	// A caller-supplied description overrides the host-derived default.
+	out2 := filepath.Join(t.TempDir(), "meta2.zim")
+	if _, _, err := BuildZIM(host, ZIMOptions{Out: out2, Description: "Custom blurb.", Date: "2026-06-14"}); err != nil {
+		t.Fatalf("BuildZIM: %v", err)
+	}
+	r2, err := zim.Open(out2)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer func() { _ = r2.Close() }()
+	if d, err := r2.Get(zim.NamespaceMetadata, "Description"); err != nil || string(d.Data) != "Custom blurb." {
+		t.Errorf("M/Description = %q, %v; want %q", d.Data, err, "Custom blurb.")
 	}
 }
 

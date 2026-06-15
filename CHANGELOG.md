@@ -6,6 +6,10 @@ All notable changes to kage are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- ZIM archives now carry the metadata Kiwix and `zimcheck` treat as mandatory. Every archive gets a `Name` and a `Description` (a host-derived line when `--description` is not given), and, when the mirror has a usable favicon, an `Illustrator_48x48@1` entry: the icon rescaled to a 48x48 PNG, which is the book icon Kiwix shows in its library.
+
 ## [0.2.0] - 2026-06-15
 
 ### Added

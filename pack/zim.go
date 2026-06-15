@@ -134,10 +134,11 @@ func buildWriter(mirrorDir string, opts ZIMOptions) (*zim.Writer, error) {
 	host := filepath.Base(mirrorDir)
 	title := firstNonEmpty(opts.Title, htmlTitleOf(mirrorDir, main), host)
 	w.AddMetadata("Title", title)
+	w.AddMetadata("Name", host)
 	w.AddMetadata("Language", firstNonEmpty(opts.Language, "eng"))
-	if opts.Description != "" {
-		w.AddMetadata("Description", opts.Description)
-	}
+	// Description is mandatory metadata in the ZIM spec, so it is always written:
+	// the caller's text when given, otherwise a line derived from the host.
+	w.AddMetadata("Description", firstNonEmpty(opts.Description, "Offline mirror of "+host+", cloned by kage."))
 	w.AddMetadata("Creator", "kage")
 	w.AddMetadata("Publisher", "kage")
 	if opts.Date != "" {
@@ -146,6 +147,11 @@ func buildWriter(mirrorDir string, opts ZIMOptions) (*zim.Writer, error) {
 	w.AddMetadata("Scraper", strings.TrimSpace("kage "+opts.Version))
 	w.AddMetadata("Source", host)
 	w.AddMetadata("Counter", counterString(counts))
+	// Illustrator_48x48@1 is the 48x48 PNG favicon Kiwix shows as the archive's
+	// icon. When the mirror has no usable icon the archive ships without one.
+	if png, ok := Favicon48(mirrorDir); ok {
+		w.AddMetadataBytes("Illustrator_48x48@1", "image/png", png)
+	}
 	return w, nil
 }
 
