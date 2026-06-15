@@ -6,6 +6,21 @@ All notable changes to kage are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Identical pages are now stored once. When a rendered page's bytes match a page
+  already written, kage stores it as a hard link to the first copy instead of a
+  second full file. This collapses the duplicate content a faceted site spawns
+  when many `?q=…`/`?page=…` URLs all render the same page. The final summary
+  reports how many pages were deduped this way.
+
+### Changed
+
+- The progress line now counts real pages. "pages" is the number of distinct URL
+  paths written, and the query-string variants that one path can spawn by the
+  thousand are shown separately as "variants", so the live counter tracks the
+  site's real size instead of being inflated by `?q=…` permutations.
+
 ## [0.2.1] - 2026-06-15
 
 ### Added

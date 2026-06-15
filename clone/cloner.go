@@ -2,6 +2,7 @@ package clone
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -45,6 +46,9 @@ type Cloner struct {
 	wg         sync.WaitGroup
 	pageJobs   chan pageItem
 	assetJobs  chan assetItem
+
+	muContent   sync.Mutex
+	seenContent map[string]string // sha-256 of page bytes -> first path written
 }
 
 type pageItem struct {
@@ -66,19 +70,20 @@ func New(seed *url.URL, cfg Config, logf Logf) *Cloner {
 	host := seed.Hostname()
 	outRoot := cfg.HostDir(host)
 	return &Cloner{
-		cfg:        cfg,
-		seed:       seed,
-		seedHost:   host,
-		outRoot:    outRoot,
-		statePth:   filepath.Join(outRoot, cfg.Reserved, "state.json"),
-		dl:         asset.NewDownloader(cfg.UserAgent, cfg.Timeout, cfg.MaxAssetBytes),
-		httpC:      &http.Client{Timeout: cfg.Timeout},
-		robots:     robots.AllowAll(),
-		front:      newFrontier(),
-		logf:       logf,
-		seenAssets: map[string]bool{},
-		pageJobs:   make(chan pageItem),
-		assetJobs:  make(chan assetItem),
+		cfg:         cfg,
+		seed:        seed,
+		seedHost:    host,
+		outRoot:     outRoot,
+		statePth:    filepath.Join(outRoot, cfg.Reserved, "state.json"),
+		dl:          asset.NewDownloader(cfg.UserAgent, cfg.Timeout, cfg.MaxAssetBytes),
+		httpC:       &http.Client{Timeout: cfg.Timeout},
+		robots:      robots.AllowAll(),
+		front:       newFrontier(),
+		logf:        logf,
+		seenAssets:  map[string]bool{},
+		seenContent: map[string]string{},
+		pageJobs:    make(chan pageItem),
+		assetJobs:   make(chan assetItem),
 	}
 }
 
@@ -96,6 +101,19 @@ func (c *Cloner) pageKey(u *url.URL) string {
 // bytes referenced over http and https download once.
 func (c *Cloner) assetKey(u *url.URL) string {
 	return urlx.LocalPath(c.seedHost, u, urlx.Asset, c.cfg.Reserved)
+}
+
+// pagePathKey is the identity of a page ignoring its query string, used to tell
+// a real page apart from its ?q=…/?page=… variants for the progress display.
+// Each variant writes its own file (so the crawl stays complete), but they all
+// fold to one path here.
+func (c *Cloner) pagePathKey(u *url.URL) string {
+	if u.RawQuery == "" {
+		return c.pageKey(u)
+	}
+	cp := *u
+	cp.RawQuery = ""
+	return c.pageKey(&cp)
 }
 
 // Run executes the clone until the frontier drains, MaxPages is hit, or ctx is
@@ -277,12 +295,13 @@ func (c *Cloner) processPage(ctx context.Context, j pageItem) {
 		c.failPage(j.u.String(), fmt.Errorf("render html: %w", err))
 		return
 	}
-	if err := c.writeFile(localFile, []byte(buf.String())); err != nil {
+	deduped, err := c.writePage(localFile, []byte(buf.String()))
+	if err != nil {
 		c.failPage(j.u.String(), fmt.Errorf("write %s: %w", localFile, err))
 		return
 	}
 	c.front.markVisited(key)
-	c.stats.pages.Add(1)
+	c.stats.recordPage(c.pagePathKey(j.u), deduped)
 }
 
 // processAsset downloads one asset, rewriting CSS references on the way, and
@@ -408,6 +427,49 @@ func (c *Cloner) enqueueAsset(ctx context.Context, u *url.URL, referer string) {
 			c.wg.Done()
 		}
 	}()
+}
+
+// writePage writes a rendered page, deduping by content. The first page with a
+// given byte content is written normally; a later page with identical bytes is
+// stored as a hard link to that first file, so the same content never occupies
+// disk twice (a faceted site whose ?q=… variants all render the same page is the
+// motivating case). It reports whether this write was deduped. If hard links are
+// unsupported, it falls back to writing the bytes, so correctness never depends
+// on the link succeeding.
+func (c *Cloner) writePage(relSlash string, data []byte) (bool, error) {
+	sum := sha256.Sum256(data)
+	h := string(sum[:])
+
+	c.muContent.Lock()
+	canon, seen := c.seenContent[h]
+	if !seen {
+		c.seenContent[h] = relSlash
+	}
+	c.muContent.Unlock()
+
+	if seen && canon != relSlash {
+		if err := c.linkFile(canon, relSlash); err == nil {
+			return true, nil
+		}
+		// The canonical file may not be on disk yet (a concurrent first write)
+		// or the filesystem may not support links; write the bytes instead.
+	}
+	return false, c.writeFile(relSlash, data)
+}
+
+// linkFile hard-links the already-written canonical file to target, replacing
+// any file already at target. Both paths are confined to the mirror root.
+func (c *Cloner) linkFile(canonSlash, targetSlash string) error {
+	canonFull := filepath.Join(c.outRoot, filepath.FromSlash(canonSlash))
+	targetFull := filepath.Join(c.outRoot, filepath.FromSlash(targetSlash))
+	if !strings.HasPrefix(targetFull, filepath.Clean(c.outRoot)+string(os.PathSeparator)) {
+		return fmt.Errorf("refusing to link outside mirror root: %s", targetSlash)
+	}
+	if err := os.MkdirAll(filepath.Dir(targetFull), 0o755); err != nil {
+		return err
+	}
+	_ = os.Remove(targetFull)
+	return os.Link(canonFull, targetFull)
 }
 
 // writeFile writes data to a slash path relative to the mirror root, creating

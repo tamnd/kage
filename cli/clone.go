@@ -172,18 +172,30 @@ func runClone(ctx context.Context, arg string, f *cloneFlags) error {
 	return nil
 }
 
-// progressLine renders the single-line live counter.
+// progressLine renders the single-line live counter. "pages" is the count of
+// real pages (distinct paths); when a faceted site spawns query-string variants
+// they are shown separately so the page number stays easy to read.
 func progressLine(p clone.Progress) string {
+	if variants := p.Pages - p.PagePaths; variants > 0 {
+		return styleDim.Render(fmt.Sprintf("pages %d  variants %d  assets %d  errors %d  skipped %d",
+			p.PagePaths, variants, p.Assets, p.PageErrors+p.AssetErrors, p.Skipped))
+	}
 	return styleDim.Render(fmt.Sprintf("pages %d  assets %d  errors %d  skipped %d",
-		p.Pages, p.Assets, p.PageErrors+p.AssetErrors, p.Skipped))
+		p.PagePaths, p.Assets, p.PageErrors+p.AssetErrors, p.Skipped))
 }
 
 // printSummary prints the final tally and where the mirror landed.
 func printSummary(res clone.Result) {
 	fmt.Fprintln(os.Stderr, styleOK.Render("done")+" "+styleTitle.Render(res.OutDir))
 	fmt.Fprintf(os.Stderr, "  %s %d   %s %d\n",
-		styleAccent.Render("pages"), res.Pages,
+		styleAccent.Render("pages"), res.PagePaths,
 		styleAccent.Render("assets"), res.Assets)
+	if variants := res.Pages - res.PagePaths; variants > 0 {
+		fmt.Fprintf(os.Stderr, "  %s %d\n", styleDim.Render("query variants"), variants)
+	}
+	if res.PagesLinked > 0 {
+		fmt.Fprintf(os.Stderr, "  %s %d\n", styleDim.Render("deduped (linked)"), res.PagesLinked)
+	}
 	if res.PageErrors+res.AssetErrors > 0 {
 		fmt.Fprintf(os.Stderr, "  %s %d\n", styleErr.Render("errors"), res.PageErrors+res.AssetErrors)
 		printFailures(res)
