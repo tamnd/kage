@@ -8,6 +8,16 @@ All notable changes to kage are recorded here. The format follows
 
 ### Added
 
+- `kage parquet export <file.zim>` and `kage parquet import <file.parquet>`
+  convert a packed archive to a columnar Parquet table and back. The table is
+  flat, one row per archive entry, with clear columns (url, host, title, mime,
+  extracted text, content), so it drops straight into the tooling a dataset host
+  like Hugging Face expects, and DuckDB or pandas can query it as is. The column
+  names follow the open-index/open-markdown dataset (`doc_id`, `url`, `host`,
+  `crawl_date`, `content_length`, `text_length`, `text`), with `doc_id` a
+  deterministic UUID v5 of the page URL, so a kage export sits alongside other
+  web-crawl datasets. The conversion is lossless: a ZIM round-tripped through
+  Parquet reproduces every entry, its metadata, and the main page byte for byte.
 - `kage pack --incremental` keeps a small cache sidecar next to the output and
   reuses the compression of any cluster whose bytes have not changed since the
   last pack. Compressing clusters with zstd is the dominant cost of packing a

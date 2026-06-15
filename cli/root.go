@@ -57,6 +57,7 @@ func newRoot() *cobra.Command {
 	root.AddCommand(newServeCmd())
 	root.AddCommand(newPackCmd())
 	root.AddCommand(newOpenCmd())
+	root.AddCommand(newParquetCmd())
 	return root
 }
 

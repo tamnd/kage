@@ -108,6 +108,67 @@ func (r *Reader) MainPage() (Blob, error) {
 	return r.blobAtIndex(r.hdr.mainPage, 0)
 }
 
+// Entry is one directory entry as stored, returned by EntryAt. A redirect keeps
+// Data nil and names its target in RedirectNamespace/RedirectURL; any other
+// entry carries its bytes in Data and its type in MimeType. Unlike Get, EntryAt
+// does not follow redirects, so a caller can round-trip every entry, the
+// redirects included.
+type Entry struct {
+	Namespace         byte
+	URL               string
+	Title             string
+	MimeType          string
+	Redirect          bool
+	RedirectNamespace byte
+	RedirectURL       string
+	Data              []byte
+}
+
+// EntryAt returns the directory entry at idx, where 0 <= idx < Count, in the
+// archive's URL order. It is the iteration counterpart to Get: it exposes every
+// entry exactly as stored, including metadata and redirects, which is what an
+// exporter needs to reproduce the archive.
+func (r *Reader) EntryAt(idx uint32) (Entry, error) {
+	d, err := r.direntAtIndex(idx)
+	if err != nil {
+		return Entry{}, err
+	}
+	e := Entry{Namespace: d.namespace, URL: d.url, Title: d.title}
+	if d.redirect {
+		e.Redirect = true
+		td, err := r.direntAtIndex(d.targetIndex)
+		if err != nil {
+			return Entry{}, fmt.Errorf("zim: redirect target of %c/%s: %w", d.namespace, d.url, err)
+		}
+		e.RedirectNamespace = td.namespace
+		e.RedirectURL = td.url
+		return e, nil
+	}
+	data, err := r.blobData(d.cluster, d.blob)
+	if err != nil {
+		return Entry{}, err
+	}
+	if int(d.mimeIdx) < len(r.mimes) {
+		e.MimeType = r.mimes[d.mimeIdx]
+	}
+	e.Data = data
+	return e, nil
+}
+
+// MainPageRef returns the namespace and url of the archive's entry point and
+// whether one is set, so an exporter can record which entry is the main page
+// without following the W/mainPage redirect.
+func (r *Reader) MainPageRef() (byte, string, bool) {
+	if r.hdr.mainPage == noMainPage {
+		return 0, "", false
+	}
+	d, err := r.direntAtIndex(r.hdr.mainPage)
+	if err != nil {
+		return 0, "", false
+	}
+	return d.namespace, d.url, true
+}
+
 // Get resolves the entry at (namespace, url), following one or more redirects.
 func (r *Reader) Get(namespace byte, url string) (Blob, error) {
 	target := key(namespace, url)
