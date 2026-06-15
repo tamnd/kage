@@ -22,6 +22,11 @@ type Writer struct {
 	byKey      map[string]*entry
 	mainKey    string
 	noCompress bool
+	// compress turns a cluster's uncompressed data section into its stored bytes.
+	// It defaults to the built-in zstd codec; a caller can replace it with a
+	// caching compressor so a re-pack reuses the compression of unchanged
+	// clusters instead of running zstd again.
+	compress func([]byte) []byte
 }
 
 type entry struct {
@@ -47,12 +52,23 @@ func key(ns byte, url string) string { return string(ns) + url }
 
 // NewWriter returns an empty Writer.
 func NewWriter() *Writer {
-	return &Writer{byKey: map[string]*entry{}}
+	return &Writer{byKey: map[string]*entry{}, compress: zstdEncode}
 }
 
 // SetNoCompress stores every cluster uncompressed. Useful when the input is
 // already compressed or when a reader without zstd must open the file.
 func (w *Writer) SetNoCompress(v bool) { w.noCompress = v }
+
+// SetCompress replaces the cluster compressor. The function must return
+// zstd-compressed bytes (the writer marks those clusters as zstd), so a caching
+// wrapper can short-circuit unchanged clusters while still producing a valid,
+// byte-identical archive. A nil function restores the built-in codec.
+func (w *Writer) SetCompress(f func([]byte) []byte) {
+	if f == nil {
+		f = zstdEncode
+	}
+	w.compress = f
+}
 
 // AddContent adds a content entry. A later add with the same namespace and url
 // replaces the earlier one. An empty title defaults to the url.
@@ -185,7 +201,7 @@ func (w *Writer) buildPlan() (plan, error) {
 	clusters := w.packClusters(ents)
 	p.clusters = make([][]byte, len(clusters))
 	for i, c := range clusters {
-		p.clusters[i] = c.encode(w.noCompress)
+		p.clusters[i] = c.encode(w.noCompress, w.compress)
 	}
 
 	// 5. Directory entry bytes (URL order).
@@ -303,7 +319,10 @@ func indexOf(cs []*clusterBuf, c *clusterBuf) int {
 // encode renders a cluster: an info byte followed by the (optionally zstd)
 // data section, which is an offset table of (N+1) uint32 values then the N
 // concatenated blobs. Offsets are relative to the start of the data section.
-func (c *clusterBuf) encode(noCompress bool) []byte {
+func (c *clusterBuf) encode(noCompress bool, compress func([]byte) []byte) []byte {
+	if compress == nil {
+		compress = zstdEncode
+	}
 	n := len(c.blobs)
 	tableLen := 4 * (n + 1)
 	total := tableLen
@@ -327,7 +346,7 @@ func (c *clusterBuf) encode(noCompress bool) []byte {
 	}
 	payload := data
 	if comp == compZstd {
-		payload = zstdEncode(data)
+		payload = compress(data)
 	} else {
 		comp = compNone
 	}

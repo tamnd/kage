@@ -6,6 +6,17 @@ All notable changes to kage are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `kage pack --incremental` keeps a small cache sidecar next to the output and
+  reuses the compression of any cluster whose bytes have not changed since the
+  last pack. Compressing clusters with zstd is the dominant cost of packing a
+  large mirror, so re-packing after a small change (a `--refresh`, a handful of
+  edited pages) only compresses what actually changed instead of the whole
+  archive. A cached cluster is byte-for-byte what a fresh compression produces,
+  so the archive stays deterministic and valid. The pack reports how many
+  clusters it reused versus compressed.
+
 ## [0.2.1] - 2026-06-15
 
 ### Added

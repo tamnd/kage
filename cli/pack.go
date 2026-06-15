@@ -28,7 +28,12 @@ type packFlags struct {
 	description string
 	language    string
 	date        string
+	incremental bool
 }
+
+// cacheSuffix names the cluster-cache sidecar kage writes next to a packed
+// artifact when --incremental is set.
+const cacheSuffix = ".kagecache"
 
 func newPackCmd() *cobra.Command {
 	f := &packFlags{}
@@ -40,7 +45,9 @@ func newPackCmd() *cobra.Command {
 			"ZIM reader can browse. With --format binary it appends that archive to a copy\n" +
 			"of kage, producing a single executable that serves the site offline when run.\n" +
 			"Add --app to wrap that executable in a double-click desktop app (a .app bundle\n" +
-			"on macOS, an AppImage-style .AppDir on Linux) with the site's favicon as the icon.",
+			"on macOS, an AppImage-style .AppDir on Linux) with the site's favicon as the icon.\n" +
+			"Add --incremental to keep a cache sidecar so re-packing a mirror only compresses\n" +
+			"the clusters that changed, not the whole archive.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPack(args[0], f)
@@ -53,6 +60,7 @@ func newPackCmd() *cobra.Command {
 	fs.BoolVar(&f.app, "app", false, "wrap the viewer in a double-click desktop app (.app on macOS, .AppImage/.AppDir on Linux)")
 	fs.StringVar(&f.icon, "icon", "", "icon file for --app (default the site's favicon)")
 	fs.BoolVar(&f.noCompress, "no-compress", false, "store every cluster raw, no zstd")
+	fs.BoolVar(&f.incremental, "incremental", false, "reuse compression from a cache sidecar so re-packing a mirror only compresses what changed")
 	fs.StringVar(&f.title, "title", "", "archive title (default the main page's <title>)")
 	fs.StringVar(&f.description, "description", "", "archive description")
 	fs.StringVar(&f.language, "language", "eng", "archive language code")
@@ -80,19 +88,26 @@ func runPack(mirrorArg string, f *packFlags) error {
 
 	switch f.format {
 	case "zim":
-		out, size, err := pack.BuildZIM(dir, zopts)
+		out := f.out
+		if out == "" {
+			out = filepath.Base(dir) + ".zim"
+		}
+		zopts.Out = out
+		var st pack.PackStats
+		if f.incremental {
+			zopts.CachePath = out + cacheSuffix
+			zopts.Stats = &st
+		}
+		outPath, size, err := pack.BuildZIM(dir, zopts)
 		if err != nil {
 			return err
 		}
-		printPackResult(out, size)
-		fmt.Fprintf(os.Stderr, "  open %s\n", styleAccent.Render("kage open "+out))
+		printPackResult(outPath, size)
+		printCacheLine(f.incremental, st)
+		fmt.Fprintf(os.Stderr, "  open %s\n", styleAccent.Render("kage open "+outPath))
 		return nil
 
 	case "binary":
-		zbytes, err := pack.BuildZIMBytes(dir, zopts)
-		if err != nil {
-			return err
-		}
 		target := resolveTargetOS(f.base)
 		out := f.out
 		if out == "" {
@@ -103,11 +118,21 @@ func runPack(mirrorArg string, f *packFlags) error {
 		if target == "windows" && !strings.HasSuffix(strings.ToLower(out), ".exe") {
 			out += ".exe"
 		}
+		var st pack.PackStats
+		if f.incremental {
+			zopts.CachePath = out + cacheSuffix
+			zopts.Stats = &st
+		}
+		zbytes, err := pack.BuildZIMBytes(dir, zopts)
+		if err != nil {
+			return err
+		}
 		path, size, err := pack.BuildBinary(zbytes, pack.BinaryOptions{Out: out, Base: f.base})
 		if err != nil {
 			return err
 		}
 		printPackResult(path, size)
+		printCacheLine(f.incremental, st)
 		printRunHint(path, target)
 		return nil
 
@@ -142,10 +167,16 @@ func runPackApp(dir string, f *packFlags, zopts pack.ZIMOptions) error {
 	if err != nil {
 		return err
 	}
+	var st pack.PackStats
+	if f.incremental {
+		zopts.CachePath = prog + cacheSuffix
+		zopts.Stats = &st
+	}
 	zbytes, err := pack.BuildZIMBytes(dir, zopts)
 	if err != nil {
 		return err
 	}
+	printCacheLine(f.incremental, st)
 
 	switch target {
 	case "darwin":
@@ -343,6 +374,18 @@ func resolveTargetOS(base string) string {
 func printPackResult(path string, size int64) {
 	fmt.Fprintln(os.Stderr, styleOK.Render("packed")+" "+styleTitle.Render(path))
 	fmt.Fprintf(os.Stderr, "  %s %s\n", styleAccent.Render("size"), humanBytes(size))
+}
+
+// printCacheLine reports how much compression the incremental cache reused. On
+// the first pack everything is compressed fresh; on a re-pack after a small
+// change most clusters are reused and only the rest are compressed.
+func printCacheLine(incremental bool, st pack.PackStats) {
+	if !incremental {
+		return
+	}
+	total := st.ClustersReused + st.ClustersCompressed
+	fmt.Fprintf(os.Stderr, "  %s %d reused, %d compressed of %d clusters\n",
+		styleDim.Render("cache"), st.ClustersReused, st.ClustersCompressed, total)
 }
 
 func printRunHint(path, target string) {
