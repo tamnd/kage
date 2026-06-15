@@ -166,3 +166,53 @@ func TestKeepMetaRefreshPlain(t *testing.T) {
 		t.Error("JS-target meta refresh must be removed regardless")
 	}
 }
+
+func TestCharsetAddedWhenMissing(t *testing.T) {
+	// A page whose source declared its charset only in the HTTP header has no
+	// <meta charset>. The saved file must gain one so a reader does not fall back
+	// to its locale encoding and mojibake the UTF-8 text.
+	in := `<html><head><title>Quotes</title></head><body><p>` +
+		"“curly” — café</p></body></html>"
+	out, rep, err := Strip([]byte(in), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rep.CharsetAdded {
+		t.Error("CharsetAdded = false, want true")
+	}
+	s := string(out)
+	if !strings.Contains(strings.ToLower(s), `<meta charset="utf-8"/>`) {
+		t.Errorf("expected an injected meta charset:\n%s", s)
+	}
+	// It must sit at the very start of <head>, before any content.
+	headIdx := strings.Index(s, "<head>")
+	metaIdx := strings.Index(strings.ToLower(s), "<meta charset")
+	titleIdx := strings.Index(s, "<title>")
+	if headIdx >= metaIdx || metaIdx >= titleIdx {
+		t.Errorf("meta charset must come first in head (head=%d meta=%d title=%d)", headIdx, metaIdx, titleIdx)
+	}
+	// The original bytes are preserved as UTF-8.
+	if !strings.Contains(s, "café") {
+		t.Error("UTF-8 content should be preserved")
+	}
+}
+
+func TestCharsetNotDuplicated(t *testing.T) {
+	// A page that already declares a charset, in either form, is left alone.
+	cases := []string{
+		`<html><head><meta charset="utf-8"><title>x</title></head><body></body></html>`,
+		`<html><head><meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1"><title>x</title></head><body></body></html>`,
+	}
+	for _, in := range cases {
+		out, rep, err := Strip([]byte(in), Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rep.CharsetAdded {
+			t.Errorf("CharsetAdded = true for a page that already declares one:\n%s", in)
+		}
+		if n := strings.Count(strings.ToLower(string(out)), "charset"); n != 1 {
+			t.Errorf("charset count = %d, want 1:\n%s", n, out)
+		}
+	}
+}

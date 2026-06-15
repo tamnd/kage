@@ -41,6 +41,7 @@ type Report struct {
 	MetaRefreshRemoved  int
 	DeadLinksRemoved    int
 	CondCommentsRemoved int
+	CharsetAdded        bool
 }
 
 // jsURLAttrs are attributes whose value may be a javascript: URL.
@@ -70,6 +71,7 @@ func Strip(doc []byte, opts Options) ([]byte, Report, error) {
 func CleanTree(root *html.Node, opts Options) Report {
 	var rep Report
 	clean(root, opts, &rep)
+	rep.CharsetAdded = ensureCharset(root)
 	if opts.Banner != "" {
 		insertBanner(root, opts.Banner)
 	}
@@ -225,6 +227,68 @@ func unwrapNoscript(parent, ns *html.Node) {
 		}
 	}
 	parent.RemoveChild(ns)
+}
+
+// ensureCharset guarantees the document declares UTF-8, inserting a
+// <meta charset="utf-8"> at the top of <head> when none is present, and reports
+// whether it added one. kage renders every saved page as UTF-8, but a source
+// that set its charset only in the HTTP Content-Type header, with no <meta>
+// charset in the markup, loses that signal once the page is a standalone file.
+// A reader then serving the bytes without a charset falls back to its locale
+// encoding and mojibakes every multibyte character (curly quotes, dashes, a
+// non-breaking space). Declaring the charset in the markup makes the page
+// self-describing in any reader, kage's own viewer and Kiwix alike.
+func ensureCharset(root *html.Node) bool {
+	head := findElement(root, atom.Head)
+	if head == nil {
+		return false
+	}
+	if hasCharsetMeta(head) {
+		return false
+	}
+	meta := &html.Node{
+		Type:     html.ElementNode,
+		Data:     "meta",
+		DataAtom: atom.Meta,
+		Attr:     []html.Attribute{{Key: "charset", Val: "utf-8"}},
+	}
+	// The declaration must precede any content for a reader to honour it, so it
+	// goes first in <head>.
+	head.InsertBefore(meta, head.FirstChild)
+	return true
+}
+
+// hasCharsetMeta reports whether head already declares a character encoding,
+// either as <meta charset="..."> or the older <meta http-equiv="Content-Type"
+// content="...; charset=...">.
+func hasCharsetMeta(head *html.Node) bool {
+	for c := head.FirstChild; c != nil; c = c.NextSibling {
+		if c.Type != html.ElementNode || c.DataAtom != atom.Meta {
+			continue
+		}
+		if attr(c, "charset") != "" {
+			return true
+		}
+		if strings.EqualFold(attr(c, "http-equiv"), "content-type") &&
+			strings.Contains(strings.ToLower(attr(c, "content")), "charset=") {
+			return true
+		}
+	}
+	return false
+}
+
+// findElement returns the first element node of the given atom in document
+// order, or nil if none exists.
+func findElement(n *html.Node, a atom.Atom) *html.Node {
+	if n.Type == html.ElementNode && n.DataAtom == a {
+		return n
+	}
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		if found := findElement(c, a); found != nil {
+			return found
+		}
+	}
+	return nil
 }
 
 // insertBanner prepends an HTML comment to the document.

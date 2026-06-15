@@ -6,6 +6,13 @@ All notable changes to kage are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Saved pages now declare their character encoding, so text no longer mojibakes in a reader.
+  kage writes every page as UTF-8, but a source that set its charset only in the HTTP `Content-Type` header, with no `<meta charset>` in the markup, lost that signal once the page became a standalone file.
+  A reader serving the bytes without a charset then fell back to its locale encoding and turned every curly quote, dash, and non-breaking space into mojibake (reported in #16 and #29).
+  kage now inserts a `<meta charset="utf-8">` at the top of `<head>` when the page does not already declare one, so the page is self-describing in any reader.
+
 ## [0.3.1] - 2026-06-15
 
 ### Fixed
