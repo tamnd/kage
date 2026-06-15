@@ -10,6 +10,7 @@ require (
 	github.com/klauspost/compress v1.18.6
 	github.com/spf13/cobra v1.10.2
 	github.com/webview/webview_go v0.0.0-20240831120633-6173450d4dd6
+	golang.org/x/image v0.42.0
 	golang.org/x/net v0.56.0
 )
 

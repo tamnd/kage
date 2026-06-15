@@ -8,7 +8,7 @@
 
 **kage** (影, "shadow") clones a website into a folder you can browse offline, with every script stripped out. It opens each page in real headless Chrome, waits for the page to settle, snapshots the DOM a human would have seen, then deletes all the JavaScript and pulls the CSS, images, and fonts down to local paths. What lands on disk looks like the live site and runs no code.
 
-[Install](#install) • [Quick start](#quick-start) • [Commands](#commands) • [Clone](#clone) • [Pack](#pack-it-into-one-file) • [Native window](#a-real-window-not-a-browser-tab) • [How it works](#how-it-works)
+[Install](#install) • [Quick start](#quick-start) • [Commands](#commands) • [Clone](#clone) • [Pack](#pack-it-into-one-file) • [Double-click app](#a-double-click-app) • [Native window](#a-real-window-not-a-browser-tab) • [How it works](#how-it-works)
 
 ![kage cloning paulgraham.com, packing it into one file, and serving it back offline](docs/static/demo.gif)
 
@@ -65,7 +65,7 @@ kage pack paulgraham.com --format binary -o paulgraham
 | --- | --- |
 | `kage clone <url>` | render a site in headless Chrome and write a browsable, script-free mirror |
 | `kage serve [dir]` | preview a cloned folder over a local HTTP server |
-| `kage pack <mirror-dir>` | collapse a mirror into one ZIM archive, or a self-contained viewer binary |
+| `kage pack <mirror-dir>` | collapse a mirror into one ZIM archive, a self-contained viewer binary, or a double-click app |
 | `kage open <file.zim>` | serve a packed ZIM back for offline reading |
 
 ## Clone
@@ -157,6 +157,32 @@ kage pack paulgraham.com --format binary --base kage-windows-amd64.exe   # -> pa
 ```
 
 The trade is size. The binary carries a whole kage, so it weighs around 13 MiB plus the site no matter how small the mirror is. When you only need the content, the ZIM is far leaner.
+
+### A double-click app
+
+A bare binary is great from a terminal, but double-click it in a file manager and the experience is rough: macOS opens a Terminal window behind the site, and on Windows a console flashes up next to it. Add `--app` and kage wraps the same viewer in a proper desktop app so a double-click just opens the site, no terminal, with the mirror's own favicon as the icon.
+
+On macOS you get a real `.app` bundle:
+
+```bash
+kage pack paulgraham.com --app                 # -> paulgraham.app
+open paulgraham.app                            # or double-click it in Finder
+```
+
+On Linux, point `--base` at a Linux kage and you get an [AppImage](https://appimage.org)-style `.AppDir` with a `.desktop` launcher (`Terminal=false`, so no console). If [`appimagetool`](https://github.com/AppImage/appimagetool) is installed, kage folds it into a single double-clickable `.AppImage` for you:
+
+```bash
+kage pack paulgraham.com --app --base kage-linux-amd64   # -> paulgraham.AppDir (+ .AppImage)
+```
+
+kage finds the icon by digging the favicon out of the mirror (it prefers a large `apple-touch-icon.png` and falls back to `favicon.ico`); pass `--icon some.png` to override it. Pair `--app` with a `webview` base (below) and the double-click opens a native window instead of the browser, which is the full "it's an app" effect.
+
+Windows needs no bundle, because there a single `.exe` already is the app. The catch is the console window. The release ships a `kage_<version>_windows-gui_<arch>.zip` whose binary is linked for the GUI subsystem, so a viewer packed onto it opens with no console behind it:
+
+```bash
+# Build a console-free Windows viewer (from any OS)
+kage pack paulgraham.com --format binary --base kage-windows-gui-amd64.exe   # -> paulgraham.exe
+```
 
 ## A real window, not a browser tab
 

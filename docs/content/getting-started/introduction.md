@@ -40,7 +40,7 @@ kage crawls breadth-first from a seed URL, staying within the seed's host (and o
 
 ## Then what?
 
-A folder is the starting point, not the end. Once you have a mirror you can [pack it](/guides/packing-a-mirror/) into a single ZIM file, the open offline-archive format Kiwix uses, so the whole site travels as one file that any ZIM reader can open. Or build kage with the `webview` tag and a packed binary opens the site in its own native window instead of a browser tab:
+A folder is the starting point, not the end. Once you have a mirror you can [pack it](/guides/packing-a-mirror/) into a single ZIM file, the open offline-archive format Kiwix uses, so the whole site travels as one file that any ZIM reader can open. You can also pack it into a self-contained binary, or a double-click desktop app with the site's favicon as its icon. Or build kage with the `webview` tag and a packed binary opens the site in its own native window instead of a browser tab:
 
 ![paulgraham.com served offline in a native kage window](/webview.png)
 

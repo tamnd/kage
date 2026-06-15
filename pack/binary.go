@@ -44,26 +44,31 @@ func BuildBinary(zimBytes []byte, opts BinaryOptions) (string, int64, error) {
 		return "", 0, fmt.Errorf("pack: read base binary %q: %w", base, err)
 	}
 
+	payload := assemble(baseBytes, zimBytes)
+	if err := os.WriteFile(opts.Out, payload, 0o755); err != nil {
+		return opts.Out, 0, err
+	}
+	// WriteFile honours the mode only when it creates the file; chmod makes an
+	// overwrite executable too.
+	if err := os.Chmod(opts.Out, 0o755); err != nil {
+		return opts.Out, 0, err
+	}
+	return opts.Out, int64(len(payload)), nil
+}
+
+// assemble builds the self-contained viewer image: the base executable, then the
+// ZIM archive, then the KAGEPCK1 trailer that records the archive length. ELF,
+// PE, and Mach-O loaders all ignore trailing bytes, so the result still runs on
+// its target OS while Embedded finds the archive at the tail.
+func assemble(baseBytes, zimBytes []byte) []byte {
 	var tr bytes.Buffer
 	tr.WriteString(trailerMagic)
 	_ = binary.Write(&tr, binary.LittleEndian, uint64(len(zimBytes)))
 	tr.WriteString(trailerMagic)
 
-	f, err := os.Create(opts.Out)
-	if err != nil {
-		return "", 0, err
-	}
-	for _, chunk := range [][]byte{baseBytes, zimBytes, tr.Bytes()} {
-		if _, err := f.Write(chunk); err != nil {
-			_ = f.Close()
-			return opts.Out, 0, err
-		}
-	}
-	if err := f.Close(); err != nil {
-		return opts.Out, 0, err
-	}
-	if err := os.Chmod(opts.Out, 0o755); err != nil {
-		return opts.Out, 0, err
-	}
-	return opts.Out, int64(len(baseBytes) + len(zimBytes) + trailerLen), nil
+	out := make([]byte, 0, len(baseBytes)+len(zimBytes)+tr.Len())
+	out = append(out, baseBytes...)
+	out = append(out, zimBytes...)
+	out = append(out, tr.Bytes()...)
+	return out
 }

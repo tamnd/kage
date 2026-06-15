@@ -99,6 +99,46 @@ A binary you built or downloaded may be quarantined by Gatekeeper on first run. 
 xattr -d com.apple.quarantine ./paulgraham
 ```
 
+## A double-click app
+
+The self-contained binary is perfect from a terminal, but double-clicking it in a file manager is less tidy: on macOS Finder opens a Terminal window behind the site, and on Windows a console flashes alongside it. Add `--app` and kage wraps the same viewer in a real desktop app, so a double-click just opens the mirror with no terminal in sight, using the site's own favicon as the icon.
+
+On macOS it writes a standard `.app` bundle:
+
+```bash
+kage pack paulgraham.com --app
+```
+
+```
+packed paulgraham.app
+  size 13.5 MiB
+  icon paulgraham.com/apple-touch-icon.png
+  double-click paulgraham.app to open the site offline
+```
+
+The bundle holds the packed viewer under `Contents/MacOS`, an `Info.plist` describing the app, and the icon converted to `Contents/Resources/icon.icns`. Double-click it in Finder, or run `open paulgraham.app`, and the site comes up with no console attached.
+
+On Linux, point `--base` at a Linux kage and you get an [AppImage](https://appimage.org)-style `.AppDir`: the viewer as `AppRun`, a `.desktop` launcher with `Terminal=false`, and the icon as a PNG. When [`appimagetool`](https://github.com/AppImage/appimagetool) is on your `PATH`, kage runs it for you and turns the directory into one double-clickable `.AppImage`; otherwise it leaves the `.AppDir` ready for any AppImage tool.
+
+```bash
+kage pack paulgraham.com --app --base kage-linux-amd64   # -> paulgraham.AppDir (+ .AppImage)
+```
+
+kage picks the icon by digging through the mirror for the site's favicon. It prefers a large `apple-touch-icon.png` and falls back to `favicon.png` or a PNG-based `favicon.ico`; if a site only ships a legacy BMP `.ico` the bundle is built without a custom icon rather than with a mangled one. Override the choice with `--icon path/to/image.png`.
+
+For the full "it's an app" effect, pair `--app` with a `webview` base so the double-click opens a native window instead of the system browser:
+
+```bash
+make build-webview
+kage pack paulgraham.com --app --base bin/kage
+```
+
+Windows needs no bundle, because there a single `.exe` already is the app. What it needs is to lose the console window. A normal build is console-attached (handy for the CLI, since that is where clone progress prints), so the release ships a second Windows binary linked for the GUI subsystem in `kage_<version>_windows-gui_<arch>.zip`. Pack a viewer onto that base and double-clicking the result opens the site with no console behind it:
+
+```bash
+kage pack paulgraham.com --format binary --base kage-windows-gui-amd64.exe   # -> paulgraham.exe
+```
+
 ## Metadata and options
 
 ```bash

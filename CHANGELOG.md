@@ -6,6 +6,31 @@ All notable changes to kage are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-15
+
+### Added
+
+- `kage pack --app` wraps the packed viewer in a double-click desktop app with
+  the site's favicon as the icon. The flag builds on the binary format, so it
+  composes with `--base` (including a `webview` base) and `--icon`. On macOS it
+  writes a `.app` bundle (`Info.plist`, the viewer under `Contents/MacOS`, and an
+  `.icns` generated from the favicon); on Linux, with a Linux `--base`, it writes
+  an AppImage-style `.AppDir` and folds it into a single `.AppImage` when
+  `appimagetool` is installed. The icon is found in the mirror automatically
+  (preferring a large `apple-touch-icon.png`, then `favicon.png` or a PNG-based
+  `favicon.ico`) and can be overridden with `--icon`.
+- The release now ships a GUI-subsystem Windows base,
+  `kage_<version>_windows-gui_<arch>.zip`. Packing a viewer onto it with
+  `--format binary --base` produces a `.exe` that opens with no console window
+  behind it, the Windows equivalent of the `.app` double-click experience.
+
+### Changed
+
+- Cross-platform packing detects the base binary's target OS from its executable
+  header (ELF, PE, or Mach-O) rather than its file name, so a Windows viewer
+  always gets a `.exe` suffix and the run hint names the right platform even when
+  the base is named without one.
+
 ## [0.1.2] - 2026-06-15
 
 ### Security
@@ -84,7 +109,8 @@ can browse offline, with every script stripped out.
   a multi-arch container image on GHCR (Chromium bundled), checksums, SBOMs, and
   a cosign signature, all cut from one version tag by GoReleaser.
 
-[Unreleased]: https://github.com/tamnd/kage/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/tamnd/kage/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/tamnd/kage/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/tamnd/kage/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/tamnd/kage/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/tamnd/kage/releases/tag/v0.1.0
