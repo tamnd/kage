@@ -8,6 +8,14 @@ All notable changes to kage are recorded here. The format follows
 
 ### Added
 
+- `kage pack --incremental` keeps a small cache sidecar next to the output and
+  reuses the compression of any cluster whose bytes have not changed since the
+  last pack. Compressing clusters with zstd is the dominant cost of packing a
+  large mirror, so re-packing after a small change (a `--refresh`, a handful of
+  edited pages) only compresses what actually changed instead of the whole
+  archive. A cached cluster is byte-for-byte what a fresh compression produces,
+  so the archive stays deterministic and valid. The pack reports how many
+  clusters it reused versus compressed.
 - Identical pages are now stored once. When a rendered page's bytes match a page
   already written, kage stores it as a hard link to the first copy instead of a
   second full file. This collapses the duplicate content a faceted site spawns

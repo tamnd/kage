@@ -26,6 +26,12 @@ func zstdEncode(p []byte) []byte {
 	return zstdEnc.EncodeAll(p, nil)
 }
 
+// Compress zstd-compresses p with the exact codec the writer uses for its
+// clusters. It is exported so a caller can cache cluster compression across
+// packs and feed the result back through Writer.SetCompress; a cached cluster is
+// then byte-for-byte what a fresh compression would have produced.
+func Compress(p []byte) []byte { return zstdEncode(p) }
+
 func zstdDecode(p []byte) ([]byte, error) {
 	initZstd()
 	return zstdDec.DecodeAll(p, nil)

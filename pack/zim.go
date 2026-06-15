@@ -31,6 +31,24 @@ type ZIMOptions struct {
 	Language    string // M/Language (default "eng")
 	Date        string // M/Date, e.g. "2026-06-14"
 	Version     string // kage version, recorded as M/Scraper
+
+	// CachePath, when set, points at a content-addressed cluster cache sidecar.
+	// Compression of unchanged clusters is reused from it, and the cache is
+	// rewritten after a successful pack. Empty disables the cache. It has no
+	// effect with NoCompress, where nothing is compressed.
+	CachePath string
+	// Stats, when non-nil, is filled with how many clusters were reused from the
+	// cache versus compressed fresh. It lets the caller report incremental gains
+	// without changing the function's return signature.
+	Stats *PackStats
+}
+
+// PackStats reports how a pack reused cached compression. ClustersReused is the
+// number of clusters whose compressed bytes came straight from the cache;
+// ClustersCompressed is the number that were zstd-compressed this run.
+type PackStats struct {
+	ClustersReused     int
+	ClustersCompressed int
 }
 
 // BuildZIM walks mirrorDir, turns every file into a C/ content entry, infers the
@@ -38,7 +56,7 @@ type ZIMOptions struct {
 // redirect, and writes a .zim to opts.Out. It returns the output path and the
 // number of bytes written.
 func BuildZIM(mirrorDir string, opts ZIMOptions) (string, int64, error) {
-	w, err := buildWriter(mirrorDir, opts)
+	w, cache, err := buildWriter(mirrorDir, opts)
 	if err != nil {
 		return "", 0, err
 	}
@@ -60,14 +78,21 @@ func BuildZIM(mirrorDir string, opts ZIMOptions) (string, int64, error) {
 		_ = f.Close()
 		return out, n, err
 	}
-	return out, n, f.Close()
+	if err := f.Close(); err != nil {
+		return out, n, err
+	}
+	if err := persistCache(opts.CachePath, cache); err != nil {
+		return out, n, err
+	}
+	fillStats(opts.Stats, cache)
+	return out, n, nil
 }
 
 // BuildZIMBytes is the buffer-returning sibling of BuildZIM: it runs the same
 // walk and returns the archive in memory, which the binary path appends to a
 // base executable without writing the ZIM to disk first.
 func BuildZIMBytes(mirrorDir string, opts ZIMOptions) ([]byte, error) {
-	w, err := buildWriter(mirrorDir, opts)
+	w, cache, err := buildWriter(mirrorDir, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -75,23 +100,54 @@ func BuildZIMBytes(mirrorDir string, opts ZIMOptions) ([]byte, error) {
 	if _, err := w.WriteTo(&buf); err != nil {
 		return nil, err
 	}
+	if err := persistCache(opts.CachePath, cache); err != nil {
+		return nil, err
+	}
+	fillStats(opts.Stats, cache)
 	return buf.Bytes(), nil
+}
+
+// persistCache writes the cluster cache back to its sidecar after a successful
+// pack. It is a no-op when caching is off.
+func persistCache(path string, c *clusterCache) error {
+	if c == nil || path == "" {
+		return nil
+	}
+	return c.save(path)
+}
+
+// fillStats copies the cache's reuse counters into the caller's PackStats when
+// both are present, so the CLI can report incremental gains.
+func fillStats(dst *PackStats, c *clusterCache) {
+	if dst == nil || c == nil {
+		return
+	}
+	dst.ClustersReused = c.reused
+	dst.ClustersCompressed = c.compressed
 }
 
 // buildWriter does the shared work of both BuildZIM and BuildZIMBytes: it loads
 // every file under mirrorDir into a zim.Writer with metadata and a main page.
-func buildWriter(mirrorDir string, opts ZIMOptions) (*zim.Writer, error) {
+func buildWriter(mirrorDir string, opts ZIMOptions) (*zim.Writer, *clusterCache, error) {
 	info, err := os.Stat(mirrorDir)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if !info.IsDir() {
-		return nil, fmt.Errorf("pack: %q is not a directory", mirrorDir)
+		return nil, nil, fmt.Errorf("pack: %q is not a directory", mirrorDir)
 	}
 
 	w := zim.NewWriter()
 	if opts.NoCompress {
 		w.SetNoCompress(true)
+	}
+
+	// The cluster cache only helps when clusters are compressed; with NoCompress
+	// there is nothing to reuse, so it is skipped.
+	var cache *clusterCache
+	if opts.CachePath != "" && !opts.NoCompress {
+		cache = loadClusterCache(opts.CachePath)
+		w.SetCompress(cache.Compress)
 	}
 
 	skip := urlx.DefaultReserved + "/state.json"
@@ -122,7 +178,7 @@ func buildWriter(mirrorDir string, opts ZIMOptions) (*zim.Writer, error) {
 		return nil
 	})
 	if walkErr != nil {
-		return nil, walkErr
+		return nil, nil, walkErr
 	}
 
 	main := pickMainPage(htmlPages)
@@ -152,7 +208,7 @@ func buildWriter(mirrorDir string, opts ZIMOptions) (*zim.Writer, error) {
 	if png, ok := Favicon48(mirrorDir); ok {
 		w.AddMetadataBytes("Illustrator_48x48@1", "image/png", png)
 	}
-	return w, nil
+	return w, cache, nil
 }
 
 // pickMainPage chooses the archive's entry point: the root index if present,
