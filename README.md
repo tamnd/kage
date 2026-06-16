@@ -6,6 +6,16 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/tamnd/kage)](https://goreportcard.com/report/github.com/tamnd/kage)
 [![License](https://img.shields.io/github/license/tamnd/kage)](./LICENSE)
 
+<!-- Keep these links, translations synced daily. -->
+[Deutsch](https://zdoc.app/de/tamnd/kage) |
+[Español](https://zdoc.app/es/tamnd/kage) |
+[français](https://zdoc.app/fr/tamnd/kage) |
+[日本語](https://zdoc.app/ja/tamnd/kage) |
+[한국어](https://zdoc.app/ko/tamnd/kage) |
+[Português](https://zdoc.app/pt/tamnd/kage) |
+[Русский](https://zdoc.app/ru/tamnd/kage) |
+[中文](https://zdoc.app/zh/tamnd/kage)
+
 **kage** (影, "shadow") clones a website into a folder you can browse offline, with every script stripped out. It opens each page in real headless Chrome, waits for the page to settle, snapshots the DOM a human would have seen, then deletes all the JavaScript and pulls the CSS, images, and fonts down to local paths. What lands on disk looks like the live site and runs no code.
 
 [Install](#install) • [Quick start](#quick-start) • [Commands](#commands) • [Clone](#clone) • [Pack](#pack-it-into-one-file) • [Double-click app](#a-double-click-app) • [Native window](#a-real-window-not-a-browser-tab) • [How it works](#how-it-works)
