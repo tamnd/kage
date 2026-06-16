@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -24,14 +25,14 @@ func newServeCmd() *cobra.Command {
 			if len(args) == 1 {
 				dir = args[0]
 			}
-			return runServe(dir, addr)
+			return runServe(cmd.Context(), dir, addr)
 		},
 	}
 	cmd.Flags().StringVarP(&addr, "addr", "a", "127.0.0.1:8800", "address to listen on")
 	return cmd
 }
 
-func runServe(dir, addr string) error {
+func runServe(ctx context.Context, dir, addr string) error {
 	info, err := os.Stat(dir)
 	if err != nil {
 		return fmt.Errorf("cannot serve %q: %w", dir, err)
@@ -50,5 +51,20 @@ func runServe(dir, addr string) error {
 	fmt.Fprintln(os.Stderr, styleTitle.Render("kage serve")+" "+styleDim.Render(abs))
 	fmt.Fprintln(os.Stderr, "  open "+styleAccent.Render("http://"+ln.Addr().String()))
 	fmt.Fprintln(os.Stderr, styleDim.Render("  press Ctrl-C to stop"))
-	return srv.Serve(ln)
+
+	srvErr := make(chan error, 1)
+	go func() { srvErr <- srv.Serve(ln) }()
+
+	select {
+	case err := <-srvErr:
+		if err != nil && err != http.ErrServerClosed {
+			return err
+		}
+	case <-ctx.Done():
+		_ = srv.Close()
+		if err := <-srvErr; err != nil && err != http.ErrServerClosed {
+			return err
+		}
+	}
+	return nil
 }
