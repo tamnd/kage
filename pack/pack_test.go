@@ -354,3 +354,80 @@ func TestHandler(t *testing.T) {
 		t.Errorf("GET missing = %d, want 404", code)
 	}
 }
+
+// titleOf returns the stored entry title for a content url, scanning entries in
+// url order since the reader exposes titles only through EntryAt.
+func titleOf(t *testing.T, r *zim.Reader, url string) string {
+	t.Helper()
+	for i := uint32(0); i < r.Count(); i++ {
+		e, err := r.EntryAt(i)
+		if err != nil {
+			continue
+		}
+		if e.Namespace == zim.NamespaceContent && e.URL == url {
+			return e.Title
+		}
+	}
+	t.Fatalf("no content entry for %q", url)
+	return ""
+}
+
+// TestBuildZIMPageTitles checks that each HTML page entry carries its own
+// <title> (collapsed to one line), that a page with no title falls back to its
+// url, and that a non-HTML asset keeps the url as its title.
+func TestBuildZIMPageTitles(t *testing.T) {
+	root := t.TempDir()
+	host := filepath.Join(root, "example.com")
+	files := map[string]string{
+		"index.html":       "<!doctype html><title>Home</title><h1>Hi</h1>",
+		"essay/index.html": "<!doctype html><title>\n  A Long\n  Title  </title><p>x</p>",
+		"bare/index.html":  "<!doctype html><h1>No title here</h1>",
+		"logo.png":         "\x89PNGfake",
+	}
+	for rel, body := range files {
+		p := filepath.Join(host, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	out := filepath.Join(t.TempDir(), "titles.zim")
+	if _, _, err := BuildZIM(host, ZIMOptions{Out: out, Date: "2026-06-14"}); err != nil {
+		t.Fatalf("BuildZIM: %v", err)
+	}
+	r, err := zim.Open(out)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer func() { _ = r.Close() }()
+
+	cases := map[string]string{
+		"index.html":       "Home",
+		"essay/index.html": "A Long Title", // newlines and runs collapsed to single spaces
+		"bare/index.html":  "bare/index.html",
+		"logo.png":         "logo.png",
+	}
+	for url, want := range cases {
+		if got := titleOf(t, r, url); got != want {
+			t.Errorf("title of %q = %q, want %q", url, got, want)
+		}
+	}
+}
+
+func TestCollapseSpaces(t *testing.T) {
+	cases := map[string]string{
+		"  hello  world ":      "hello world",
+		"line\n\tone\r\n  two": "line one two",
+		"":                     "",
+		"   ":                  "",
+		"single":               "single",
+	}
+	for in, want := range cases {
+		if got := collapseSpaces(in); got != want {
+			t.Errorf("collapseSpaces(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

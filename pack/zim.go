@@ -170,11 +170,16 @@ func buildWriter(mirrorDir string, opts ZIMOptions) (*zim.Writer, *clusterCache,
 			return err
 		}
 		mime := MimeForExt(rel)
+		title := ""
 		if mime == "text/html" {
 			htmlPages = append(htmlPages, rel)
+			// Store the page's real <title> on its entry, not the URL path, so a
+			// ZIM reader's search box and suggestions match the readable title.
+			// An empty result leaves the writer to fall back to the url.
+			title = htmlTitleOfBytes(data)
 		}
 		counts[mime]++
-		w.AddContent(zim.NamespaceContent, rel, "", mime, data)
+		w.AddContent(zim.NamespaceContent, rel, title, mime, data)
 		return nil
 	})
 	if walkErr != nil {
@@ -240,16 +245,30 @@ func htmlTitleOf(mirrorDir, mainURL string) string {
 	if mainURL == "" {
 		return ""
 	}
-	f, err := os.Open(filepath.Join(mirrorDir, filepath.FromSlash(mainURL)))
+	data, err := os.ReadFile(filepath.Join(mirrorDir, filepath.FromSlash(mainURL)))
 	if err != nil {
 		return ""
 	}
-	defer func() { _ = f.Close() }()
-	doc, err := html.Parse(f)
+	return htmlTitleOfBytes(data)
+}
+
+// htmlTitleOfBytes returns the first <title> in the given HTML with surrounding
+// and internal whitespace collapsed, or "" if the bytes do not parse or carry
+// no title. Page entries use it so a ZIM reader shows the page's real title
+// instead of its URL path.
+func htmlTitleOfBytes(data []byte) string {
+	doc, err := html.Parse(bytes.NewReader(data))
 	if err != nil {
 		return ""
 	}
-	return strings.TrimSpace(findTitle(doc))
+	return collapseSpaces(findTitle(doc))
+}
+
+// collapseSpaces trims s and replaces every run of whitespace (including the
+// newlines a wrapped <title> can carry) with a single space, so a title reads
+// as one clean line in a reader's library and search results.
+func collapseSpaces(s string) string {
+	return strings.Join(strings.Fields(s), " ")
 }
 
 // findTitle returns the text of the first <title> element in depth-first order.

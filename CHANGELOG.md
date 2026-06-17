@@ -6,6 +6,17 @@ All notable changes to kage are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Each saved page is now stored in a packed ZIM under its own `<title>` instead of its URL path, so a ZIM reader's search box suggests pages by their readable title.
+  Typing into Kiwix's search now offers "Five Founders" or "Female Founders" rather than a filename, because the title pointer list a reader's suggestion search walks carries the real page titles.
+  A page with no `<title>` still falls back to its path, and the per-page title also flows into the `title` column of `kage parquet export`.
+
+### Added
+
+- The packing guide now documents how search works on a kage archive: title suggestions in any ZIM reader, and full-text search of page bodies through `kage parquet export` and DuckDB.
+  A Xapian full-text index is deliberately not written, since Xapian is GPL and kage is MIT.
+
 ## [0.3.4] - 2026-06-17
 
 ### Fixed

@@ -41,7 +41,18 @@ kage open paulgraham.com.zim            # read it back with kage
 kiwix-serve paulgraham.com.zim          # or serve it with Kiwix at http://localhost
 ```
 
-You can also double-click the file in the [Kiwix desktop app](https://kiwix.org/en/applications/), or load it on Kiwix for Android or iOS to read your mirror on your phone. kage writes the metadata the format and `zimcheck` treat as mandatory, including the title, description, and the favicon Kiwix shows as the book icon in its library, so the archive shows up properly rather than as an untitled, iconless entry. One caveat: kage does not write the full-text search index that Kiwix's own packs ship with, so browsing works everywhere while in-reader search is limited.
+You can also double-click the file in the [Kiwix desktop app](https://kiwix.org/en/applications/), or load it on Kiwix for Android or iOS to read your mirror on your phone. kage writes the metadata the format and `zimcheck` treat as mandatory, including the title, description, and the favicon Kiwix shows as the book icon in its library, so the archive shows up properly rather than as an untitled, iconless entry.
+
+### Searching a packed mirror
+
+Each page is stored under its own real `<title>`, so the search box in Kiwix (and any other ZIM reader) suggests pages by their readable title: type `five` into a paulgraham.com archive and it offers "Five Founders" and "Female Founders", not a filename. This title search works in every reader with no extra index.
+
+What kage does not write is a Xapian full-text index, the separate search database that lets Kiwix match words inside a page's body. Xapian is GPL and kage is MIT, so linking it in would change kage's license; rather than do that, kage leaves full-text search to its own columnar export. `kage parquet export mirror.zim` writes one row per page with a `text` column, which [DuckDB](https://duckdb.org) searches with its `fts` extension or a plain `ILIKE`, fully offline and ranked:
+
+```bash
+kage parquet export paulgraham.com.zim -o paulgraham.parquet
+duckdb -c "SELECT url FROM 'paulgraham.parquet' WHERE text ILIKE '%schlep blindness%'"
+```
 
 ## A self-contained binary
 
