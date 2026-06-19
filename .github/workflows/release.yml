@@ -71,7 +71,13 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # Tools GoReleaser shells out to for signing and SBOMs.
+      # Pin cosign to the 2.x line. cosign 3.x makes the new bundle format the
+      # default, which ignores the --output-signature/--output-certificate flags
+      # the signs block uses and aborts. Pinning keeps the .sig/.pem outputs and
+      # stops the release tool from floating to a breaking latest.
       - uses: sigstore/cosign-installer@v4.1.2
+        with:
+          cosign-release: "v2.6.3"
       - uses: anchore/sbom-action/download-syft@v0.24.0
 
       - uses: goreleaser/goreleaser-action@v7.2.2
