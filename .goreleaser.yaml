@@ -151,11 +151,11 @@ homebrew_casks:
     repository:
       owner: tamnd
       name: homebrew-tap
-      token: '{{ envOrDefault "HOMEBREW_TAP_GITHUB_TOKEN" "" }}'
+      token: '{{ index .Env "HOMEBREW_TAP_GITHUB_TOKEN" }}'
     directory: Casks
     homepage: https://github.com/tamnd/kage
     description: Clone any website for offline viewing, with the JavaScript stripped out
-    skip_upload: '{{ if envOrDefault "HOMEBREW_TAP_GITHUB_TOKEN" "" }}false{{ else }}true{{ end }}'
+    skip_upload: '{{ if index .Env "HOMEBREW_TAP_GITHUB_TOKEN" }}false{{ else }}true{{ end }}'
     commit_author:
       name: Duc-Tam Nguyen
       email: tamnd87@gmail.com
@@ -168,11 +168,11 @@ scoops:
     repository:
       owner: tamnd
       name: scoop-bucket
-      token: '{{ envOrDefault "SCOOP_BUCKET_GITHUB_TOKEN" "" }}'
+      token: '{{ index .Env "SCOOP_BUCKET_GITHUB_TOKEN" }}'
     homepage: https://github.com/tamnd/kage
     description: Clone any website for offline viewing, with the JavaScript stripped out
     license: MIT
-    skip_upload: '{{ if envOrDefault "SCOOP_BUCKET_GITHUB_TOKEN" "" }}false{{ else }}true{{ end }}'
+    skip_upload: '{{ if index .Env "SCOOP_BUCKET_GITHUB_TOKEN" }}false{{ else }}true{{ end }}'
     commit_author:
       name: Duc-Tam Nguyen
       email: tamnd87@gmail.com
