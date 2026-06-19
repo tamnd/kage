@@ -169,6 +169,7 @@ scoops:
       owner: tamnd
       name: scoop-bucket
       token: '{{ .Env.SCOOP_BUCKET_GITHUB_TOKEN }}'
+    directory: bucket
     homepage: https://github.com/tamnd/kage
     description: Clone any website for offline viewing, with the JavaScript stripped out
     license: MIT
