@@ -151,7 +151,7 @@ homebrew_casks:
     repository:
       owner: tamnd
       name: homebrew-tap
-      token: '{{ index .Env "HOMEBREW_TAP_GITHUB_TOKEN" }}'
+      token: '{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}'
     directory: Casks
     homepage: https://github.com/tamnd/kage
     description: Clone any website for offline viewing, with the JavaScript stripped out
@@ -168,7 +168,7 @@ scoops:
     repository:
       owner: tamnd
       name: scoop-bucket
-      token: '{{ index .Env "SCOOP_BUCKET_GITHUB_TOKEN" }}'
+      token: '{{ .Env.SCOOP_BUCKET_GITHUB_TOKEN }}'
     homepage: https://github.com/tamnd/kage
     description: Clone any website for offline viewing, with the JavaScript stripped out
     license: MIT
