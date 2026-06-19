@@ -56,12 +56,13 @@ type Config struct {
 	ScopePrefix       string
 	ExcludePaths      []string
 
-	RespectRobots bool
-	FollowSitemap bool
-	Headless      bool
-	KeepNoscript  bool
-	ChromeBin     string
-	ControlURL    string
+	RespectRobots  bool
+	FollowSitemap  bool
+	Headless       bool
+	KeepNoscript   bool
+	MobileReadable bool
+	ChromeBin      string
+	ControlURL     string
 
 	// Resume loads the prior run's visited set and skips pages already written,
 	// so an interrupted or repeated clone picks up where it left off instead of

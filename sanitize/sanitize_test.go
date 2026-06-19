@@ -197,6 +197,40 @@ func TestCharsetAddedWhenMissing(t *testing.T) {
 	}
 }
 
+func TestMobileReadableInjectsViewportAndCSS(t *testing.T) {
+	// A paulgraham.com-style page: no viewport, tiny <font size="2"> markup.
+	in := `<html><head><title>Essay</title></head>` +
+		`<body><font size="2" face="verdana"><p>Hello world.</p></font></body></html>`
+	out, _, err := Strip([]byte(in), Options{MobileReadable: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	if !strings.Contains(s, `name="viewport"`) {
+		t.Error("viewport meta not injected")
+	}
+	if !strings.Contains(s, "width=device-width") {
+		t.Error("viewport content wrong")
+	}
+	if !strings.Contains(s, "font-size:18px") {
+		t.Error("mobile CSS not injected")
+	}
+	if !strings.Contains(s, "font{font-size:1rem") {
+		t.Error("font override not in mobile CSS")
+	}
+}
+
+func TestMobileReadableSkipsExistingViewport(t *testing.T) {
+	in := `<html><head><meta name="viewport" content="width=device-width"><title>x</title></head><body></body></html>`
+	out, _, err := Strip([]byte(in), Options{MobileReadable: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(string(out), `name="viewport"`); n != 1 {
+		t.Errorf("viewport injected when one already existed (count %d)", n)
+	}
+}
+
 func TestCharsetNotDuplicated(t *testing.T) {
 	// A page that already declares a charset, in either form, is left alone.
 	cases := []string{

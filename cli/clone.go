@@ -39,8 +39,9 @@ type cloneFlags struct {
 	noRobots      bool
 	noSitemap     bool
 	headful       bool
-	keepNoscript  bool
-	chromeBin     string
+	keepNoscript    bool
+	mobileReadable  bool
+	chromeBin       string
 	controlURL    string
 	noResume      bool
 	refresh       bool
@@ -86,6 +87,7 @@ func newCloneCmd() *cobra.Command {
 	fs.BoolVar(&f.noSitemap, "no-sitemap", false, "do not seed URLs from sitemap.xml")
 	fs.BoolVar(&f.headful, "headful", false, "run Chrome with a visible window (debugging)")
 	fs.BoolVar(&f.keepNoscript, "keep-noscript", false, "unwrap <noscript> content instead of dropping it")
+	fs.BoolVar(&f.mobileReadable, "mobile", false, "inject viewport and CSS overrides so legacy sites read comfortably on a phone")
 	fs.StringVar(&f.chromeBin, "chrome", "", "path to the Chrome/Chromium binary")
 	fs.StringVar(&f.controlURL, "control-url", "", "attach to an existing Chrome DevTools endpoint")
 	fs.BoolVar(&f.noResume, "no-resume", false, "do not reuse or write resume state")
@@ -140,6 +142,7 @@ func runClone(ctx context.Context, arg string, f *cloneFlags) error {
 	cfg.FollowSitemap = !f.noSitemap
 	cfg.Headless = !f.headful
 	cfg.KeepNoscript = f.keepNoscript
+	cfg.MobileReadable = f.mobileReadable
 	cfg.ChromeBin = f.chromeBin
 	cfg.ControlURL = f.controlURL
 	cfg.Resume = !f.noResume

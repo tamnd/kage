@@ -6,6 +6,8 @@ All notable changes to kage are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-06-19
+
 ### Changed
 
 - Each saved page is now stored in a packed ZIM under its own `<title>` instead of its URL path, so a ZIM reader's search box suggests pages by their readable title.
@@ -14,6 +16,11 @@ All notable changes to kage are recorded here. The format follows
 
 ### Added
 
+- `kage clone --mobile` makes legacy "font-era" sites readable on a phone.
+  Sites from the 1990s and early 2000s — paulgraham.com is a good example — embed typography directly in the HTML with `<font size="2" face="verdana">`, table-based layouts, and no viewport declaration.
+  A mobile browser receiving that markup without a viewport meta shrinks everything to desktop scale, and the `<font size="2">` instruction then makes the already-small text microscopic.
+  Passing `--mobile` injects two things into every saved page before it is written: a `<meta name="viewport" content="width=device-width, initial-scale=1">` tag so the browser stops shrinking, and a small `<style>` block that lifts the base font size to 18 px, inherits that size through `<font>` elements, caps the content width at 720 px, loosens line height to 1.7, and hides image-map navigation elements (usually a GIF served from an external CDN that 404s offline anyway).
+  The override is deliberately last in `<head>` so it wins specificity ties, and it does not touch pages that already carry a viewport and readable type sizes.
 - The packing guide now documents how search works on a kage archive: title suggestions in any ZIM reader, and full-text search of page bodies through `kage parquet export` and DuckDB.
   A Xapian full-text index is deliberately not written, since Xapian is GPL and kage is MIT.
 
