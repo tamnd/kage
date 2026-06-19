@@ -305,8 +305,9 @@ func (c *Cloner) processPage(ctx context.Context, j pageItem) {
 
 	asset.RewriteHTML(root, j.u, sink)
 	sanitize.CleanTree(root, sanitize.Options{
-		KeepNoscript: c.cfg.KeepNoscript,
-		Banner:       "cloned by kage from " + j.u.String(),
+		KeepNoscript:   c.cfg.KeepNoscript,
+		MobileReadable: c.cfg.MobileReadable,
+		Banner:         "cloned by kage from " + j.u.String(),
 	})
 
 	var buf strings.Builder

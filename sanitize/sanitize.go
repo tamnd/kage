@@ -29,6 +29,14 @@ type Options struct {
 	// Banner, when non-empty, is inserted as an HTML comment at the top of the
 	// document.
 	Banner string
+	// MobileReadable injects a viewport meta tag and a small CSS block that
+	// makes legacy, font-era sites readable on mobile. It is intended for
+	// archives of 1990s/2000s sites that use <font size="2">, table layouts,
+	// and no viewport declaration — all of which render as microscopic text on
+	// a phone. The injected CSS overrides font sizes, loosens line height, caps
+	// the content width, and hides image-map navigation elements that are
+	// useless offline.
+	MobileReadable bool
 }
 
 // Report counts what was removed, for the run summary and for tests.
@@ -72,6 +80,10 @@ func CleanTree(root *html.Node, opts Options) Report {
 	var rep Report
 	clean(root, opts, &rep)
 	rep.CharsetAdded = ensureCharset(root)
+	if opts.MobileReadable {
+		ensureViewport(root)
+		injectMobileCSS(root)
+	}
 	if opts.Banner != "" {
 		insertBanner(root, opts.Banner)
 	}
@@ -289,6 +301,67 @@ func findElement(n *html.Node, a atom.Atom) *html.Node {
 		}
 	}
 	return nil
+}
+
+// mobileCSS is injected when MobileReadable is set. It targets legacy "font
+// era" HTML that renders as microscopic text on mobile:
+//   - :root font-size 18 px — baseline all em/rem sizes upward
+//   - body — centre, cap width, add padding, loosen line height
+//   - font element — override the in-HTML size/face attributes that sites like
+//     paulgraham.com embed directly in the markup (e.g. <font size="2">)
+//   - table/td — prevent overflow; add minimal cell breathing room
+//   - img[usemap], map — image-map navigation is useless offline (the image
+//     itself usually 404s from an external CDN); hide both the image and the map
+const mobileCSS = `body{max-width:720px;margin:0 auto;padding:.75em 1em;line-height:1.7;font-family:Georgia,"Times New Roman",serif}` +
+	`:root{font-size:18px}` +
+	`font{font-size:1rem!important;font-family:inherit!important;color:inherit!important}` +
+	`table{max-width:100%!important;word-break:break-word}` +
+	`td,th{padding:.25em!important}` +
+	`img[usemap],map{display:none!important}`
+
+// ensureViewport inserts <meta name="viewport" content="width=device-width,
+// initial-scale=1"> at the top of <head> when the document does not already
+// carry one. Without it a mobile browser shrinks the page to fit the screen
+// at desktop scale, making text unreadably small regardless of CSS font sizes.
+func ensureViewport(root *html.Node) {
+	head := findElement(root, atom.Head)
+	if head == nil {
+		return
+	}
+	// Check whether a viewport meta already exists.
+	for c := head.FirstChild; c != nil; c = c.NextSibling {
+		if c.Type == html.ElementNode && c.DataAtom == atom.Meta &&
+			strings.EqualFold(attr(c, "name"), "viewport") {
+			return
+		}
+	}
+	meta := &html.Node{
+		Type:     html.ElementNode,
+		Data:     "meta",
+		DataAtom: atom.Meta,
+		Attr: []html.Attribute{
+			{Key: "name", Val: "viewport"},
+			{Key: "content", Val: "width=device-width, initial-scale=1"},
+		},
+	}
+	head.InsertBefore(meta, head.FirstChild)
+}
+
+// injectMobileCSS appends a <style> block containing mobileCSS to <head>.
+// It goes at the end of <head> so it wins specificity ties over any existing
+// inline styles the page already carries.
+func injectMobileCSS(root *html.Node) {
+	head := findElement(root, atom.Head)
+	if head == nil {
+		return
+	}
+	style := &html.Node{
+		Type:     html.ElementNode,
+		Data:     "style",
+		DataAtom: atom.Style,
+	}
+	style.AppendChild(&html.Node{Type: html.TextNode, Data: mobileCSS})
+	head.AppendChild(style)
 }
 
 // insertBanner prepends an HTML comment to the document.
