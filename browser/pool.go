@@ -165,7 +165,7 @@ func (p *Pool) getBrowser() (*rod.Browser, error) {
 
 	controlURL := p.opts.ControlURL
 	if controlURL == "" {
-		l := launcher.New().
+		l := launcher.New().Leakless(launcherLeakless()).
 			Headless(p.opts.Headless).
 			Set("disable-blink-features", "AutomationControlled").
 			Set("disable-gpu", "")
