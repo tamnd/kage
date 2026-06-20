@@ -17,24 +17,28 @@ ARG TARGETPLATFORM
 # chromium for rendering; ca-certificates for HTTPS; tzdata for sane timestamps;
 # the font package so rendered pages have glyphs to lay out.
 RUN apk add --no-cache chromium ca-certificates tzdata font-noto \
- && adduser -D -H -u 10001 kage \
- && mkdir -p /out \
- && chown kage:kage /out
+ && mkdir -p /out
 
 COPY $TARGETPLATFORM/kage /usr/bin/kage
 
-USER kage
 WORKDIR /out
 
 # Point kage at the bundled Chromium and write mirrors under /out by default:
 #
 #   docker run -v "$PWD/out:/out" ghcr.io/tamnd/kage clone example.com
 #
-# The kage user has no home directory of its own, so HOME points at the mounted
-# /out volume. That keeps two things writable: kage's default output and resume
-# state (it lands under $HOME/data/kage), and Chrome's profile and crash
-# database. Without this both fail with a permission error in the container
-# (issue #7), and the mounted volume captures nothing.
+# The container runs as root, and that is deliberate (issue #7). A bind-mounted
+# /out is owned by whoever created it on the host, so only root can reliably
+# write into it; a fixed non-root uid cannot, and both kage's output and resume
+# state (under $HOME/data/kage) then fail with "mkdir /out: permission denied".
+# The same unwritable HOME also breaks Chrome: it launches chrome_crashpad_handler
+# with an empty crash database path, which aborts the whole browser with
+# "chrome_crashpad_handler: --database is required" and fails every render.
+# Running as root keeps /out and HOME writable whatever the host owns, so the
+# one-liner above just works. This costs nothing in the sandbox: Chrome's sandbox
+# is already off inside any container (kage drops it on container detection), so
+# root here does not loosen a boundary that was holding. HOME points at /out so
+# the default output and Chrome's writable state both land in the mounted volume.
 ENV KAGE_CHROME=/usr/bin/chromium-browser \
     HOME=/out
 

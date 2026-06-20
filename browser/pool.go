@@ -183,13 +183,14 @@ func (p *Pool) getBrowser() (*rod.Browser, error) {
 		// In a container, the default /dev/shm is only 64 MB, too small for
 		// Chrome's renderer on large pages, so steer it to a temp file instead.
 		// Outside a container /dev/shm is roomy and faster, so leave it alone.
-		// Chrome's crashpad handler also aborts with "--database is required" in a
-		// minimal container, which fails the whole launch (issue #7), so turn the
-		// crash reporter off there. kage never uploads Chrome crash dumps anyway.
+		//
+		// The "chrome_crashpad_handler: --database is required" abort seen in
+		// containers (issue #7) is not fixed here: the crash-reporter flags do not
+		// stop Chrome from spawning the handler. Its real cause is an unwritable
+		// HOME, which leaves the crash database path empty; the image keeps HOME
+		// writable instead (see the Dockerfile).
 		if inContainer() {
-			l = l.Set("disable-dev-shm-usage", "").
-				Set("disable-crash-reporter", "").
-				Set("disable-breakpad", "")
+			l = l.Set("disable-dev-shm-usage", "")
 		}
 
 		if bin := p.chromeBin(); bin != "" {
