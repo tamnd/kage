@@ -2,7 +2,9 @@ package browser
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -123,6 +125,58 @@ func TestRenderCapturesFinalDOM(t *testing.T) {
 	}
 	if !strings.Contains(res.HTML, "rendered-by-js") {
 		t.Errorf("render did not capture the JS-built DOM:\n%s", res.HTML)
+	}
+}
+
+func TestRenderPreservesCanvasPixels(t *testing.T) {
+	if testing.Short() {
+		t.Skip("render test drives Chrome; skipped under -short")
+	}
+	if _, ok := LookChrome(); !ok {
+		t.Skip("no Chrome/Chromium found; skipping render test")
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(`<!doctype html><html><body>
+<canvas id="graph" width="32" height="16"></canvas>
+<script>
+const ctx = document.getElementById("graph").getContext("2d");
+ctx.fillStyle = "#ff0000";
+ctx.fillRect(0, 0, 32, 16);
+</script>
+</body></html>`))
+	}))
+	defer srv.Close()
+
+	p := New(Options{Headless: true, Workers: 1, Settle: 300 * time.Millisecond, RenderTimeout: 20 * time.Second})
+	defer func() { _ = p.Close() }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	res, err := p.Render(ctx, srv.URL)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	if !strings.Contains(res.HTML, `src="data:image/png;base64,`) {
+		t.Fatalf("rendered HTML does not include a canvas PNG snapshot:\n%s", res.HTML)
+	}
+	data, ok := strings.CutPrefix(res.HTML[strings.Index(res.HTML, `src="data:image/png;base64,`):], `src="data:image/png;base64,`)
+	if !ok {
+		t.Fatalf("rendered HTML does not include a canvas PNG snapshot:\n%s", res.HTML)
+	}
+	encoded, _, ok := strings.Cut(data, `"`)
+	if !ok {
+		t.Fatalf("canvas PNG snapshot is not quoted correctly:\n%s", res.HTML)
+	}
+	img, err := png.Decode(base64.NewDecoder(base64.StdEncoding, strings.NewReader(encoded)))
+	if err != nil {
+		t.Fatalf("decode canvas PNG snapshot: %v", err)
+	}
+	r, g, b, a := img.At(0, 0).RGBA()
+	if r < 0xff00 || g > 0x0100 || b > 0x0100 || a < 0xff00 {
+		t.Fatalf("canvas PNG first pixel = rgba(%#x, %#x, %#x, %#x); want opaque red", r, g, b, a)
 	}
 }
 
