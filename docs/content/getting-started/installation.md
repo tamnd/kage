@@ -15,7 +15,7 @@ go install github.com/tamnd/kage/cmd/kage@latest
 ## Homebrew (macOS)
 
 ```bash
-brew install tamnd/tap/kage
+brew install --cask tamnd/tap/kage
 ```
 
 The cask installs the prebuilt macOS binary. On Linux, use the packages below or

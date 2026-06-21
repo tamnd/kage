@@ -28,7 +28,7 @@ Prefer a prebuilt binary? Grab an archive, a `.deb`/`.rpm`/`.apk`, or a checksum
 
 ```bash
 # Homebrew (macOS)
-brew install tamnd/tap/kage
+brew install --cask tamnd/tap/kage
 
 # Scoop (Windows)
 scoop bucket add tamnd https://github.com/tamnd/scoop-bucket
