@@ -37,6 +37,7 @@ type cloneFlags struct {
 	scopePrefix    string
 	exclude        []string
 	noRobots       bool
+	crawlDelay     time.Duration
 	noSitemap      bool
 	headful        bool
 	keepNoscript   bool
@@ -84,6 +85,7 @@ func newCloneCmd() *cobra.Command {
 	fs.StringVar(&f.scopePrefix, "scope-prefix", "", "only crawl pages whose path starts with this prefix")
 	fs.StringSliceVar(&f.exclude, "exclude", nil, "path prefixes to skip (repeatable)")
 	fs.BoolVar(&f.noRobots, "no-robots", false, "ignore robots.txt (be careful and polite)")
+	fs.DurationVar(&f.crawlDelay, "crawl-delay", 0, "override robots.txt Crawl-delay between page starts (0 = use robots.txt)")
 	fs.BoolVar(&f.noSitemap, "no-sitemap", false, "do not seed URLs from sitemap.xml")
 	fs.BoolVar(&f.headful, "headful", false, "run Chrome with a visible window (debugging)")
 	fs.BoolVar(&f.keepNoscript, "keep-noscript", false, "unwrap <noscript> content instead of dropping it")
@@ -101,6 +103,9 @@ func runClone(ctx context.Context, arg string, f *cloneFlags) error {
 	seed, err := urlx.ParseSeed(arg)
 	if err != nil {
 		return fmt.Errorf("invalid url %q: %w", arg, err)
+	}
+	if f.crawlDelay < 0 {
+		return fmt.Errorf("--crawl-delay must be >= 0")
 	}
 
 	cfg := clone.DefaultConfig()
@@ -139,6 +144,7 @@ func runClone(ctx context.Context, arg string, f *cloneFlags) error {
 	cfg.ScopePrefix = f.scopePrefix
 	cfg.ExcludePaths = f.exclude
 	cfg.RespectRobots = !f.noRobots
+	cfg.CrawlDelay = f.crawlDelay
 	cfg.FollowSitemap = !f.noSitemap
 	cfg.Headless = !f.headful
 	cfg.KeepNoscript = f.keepNoscript

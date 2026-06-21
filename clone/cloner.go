@@ -19,6 +19,7 @@ import (
 	"github.com/tamnd/kage/sanitize"
 	"github.com/tamnd/kage/urlx"
 	"golang.org/x/net/html"
+	"golang.org/x/time/rate"
 )
 
 // Logf is an optional sink for human-readable progress lines.
@@ -43,9 +44,12 @@ type Cloner struct {
 	mu         sync.Mutex
 	seenAssets map[string]bool
 	enqueued   int // pages offered to the queue
-	wg         sync.WaitGroup
-	pageJobs   chan pageItem
-	assetJobs  chan assetItem
+
+	crawlLimiter *rate.Limiter
+
+	wg        sync.WaitGroup
+	pageJobs  chan pageItem
+	assetJobs chan assetItem
 
 	muContent   sync.Mutex
 	seenContent map[string]string // sha-256 of page bytes -> first path written
@@ -144,6 +148,7 @@ func (c *Cloner) Run(ctx context.Context) (Result, error) {
 	defer func() { _ = c.pool.Close() }()
 
 	c.loadRobots(ctx)
+	c.setupCrawlDelayLimiter()
 
 	// Start workers.
 	var workers sync.WaitGroup
@@ -218,6 +223,19 @@ func (c *Cloner) loadRobots(ctx context.Context) {
 	c.robots = robots.Parse(string(data), "kage")
 }
 
+func (c *Cloner) setupCrawlDelayLimiter() {
+	delay := c.cfg.CrawlDelay
+	if delay <= 0 && c.cfg.RespectRobots && c.robots != nil {
+		delay = c.robots.CrawlDelay
+	}
+	if delay <= 0 {
+		c.crawlLimiter = nil
+		return
+	}
+
+	c.crawlLimiter = rate.NewLimiter(rate.Every(delay), 1)
+}
+
 // seedSitemaps adds in-scope sitemap URLs (from robots and the default path) to
 // the frontier.
 func (c *Cloner) seedSitemaps(ctx context.Context) {
@@ -250,6 +268,9 @@ func (c *Cloner) processPage(ctx context.Context, j pageItem) {
 	key := c.pageKey(j.u)
 	if c.cfg.RespectRobots && !c.robots.Allowed(j.u.Path) {
 		c.stats.skipped.Add(1)
+		return
+	}
+	if !c.waitForCrawlDelay(ctx) {
 		return
 	}
 
@@ -322,6 +343,15 @@ func (c *Cloner) processPage(ctx context.Context, j pageItem) {
 	}
 	c.front.markVisited(key)
 	c.stats.recordPage(c.pagePathKey(j.u), deduped)
+}
+
+// waitForCrawlDelay spaces page render starts.
+func (c *Cloner) waitForCrawlDelay(ctx context.Context) bool {
+	if c.crawlLimiter == nil {
+		return true
+	}
+
+	return c.crawlLimiter.Wait(ctx) == nil
 }
 
 // processAsset downloads one asset, rewriting CSS references on the way, and

@@ -122,6 +122,7 @@ The flags you'll actually reach for:
 | `--scroll` | `false` | Auto-scroll each page to trigger lazy loading |
 | `--workers` | `4` | How many pages to render at once |
 | `--no-robots` | `false` | Ignore `robots.txt` (be nice) |
+| `--crawl-delay` | `0s` | Override robots.txt `Crawl-delay` between page starts |
 | `-f, --force` | `false` | Delete any existing mirror for the host first |
 | `--chrome` | | Path to the Chrome/Chromium binary |
 

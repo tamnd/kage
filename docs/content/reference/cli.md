@@ -47,6 +47,7 @@ images, and fonts, and writes a browsable mirror to `<out>/<host>/`.
 | Flag | Default | Meaning |
 |------|---------|---------|
 | `--no-robots` | `false` | Ignore `robots.txt` |
+| `--crawl-delay` | `0s` | Override robots.txt `Crawl-delay` between page starts (0 = use robots.txt) |
 | `--no-sitemap` | `false` | Do not seed URLs from `sitemap.xml` |
 | `--user-agent` | Chrome UA | User-Agent for asset and robots fetches |
 

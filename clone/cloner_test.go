@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/tamnd/kage/browser"
+	"github.com/tamnd/kage/robots"
 	"github.com/tamnd/kage/urlx"
 )
 
@@ -175,6 +176,56 @@ func TestPageKeyCollapsesDuplicates(t *testing.T) {
 	// Genuinely different pages must not collapse.
 	if c.pageKey(mustURL(t, "https://ex.com/a")) == c.pageKey(mustURL(t, "https://ex.com/b")) {
 		t.Error("distinct pages share a key")
+	}
+}
+
+func TestCrawlDelaySpacesPageStarts(t *testing.T) {
+	seed, _ := urlx.ParseSeed("https://ex.com")
+	cfg := DefaultConfig()
+	cfg.RespectRobots = true
+	c := New(seed, cfg, nil)
+	c.robots = &robots.Matcher{CrawlDelay: 20 * time.Millisecond}
+	c.setupCrawlDelayLimiter()
+
+	ctx := context.Background()
+	if !c.waitForCrawlDelay(ctx) {
+		t.Fatal("first crawl-delay wait returned false")
+	}
+
+	start := time.Now()
+	if !c.waitForCrawlDelay(ctx) {
+		t.Fatal("second crawl-delay wait returned false")
+	}
+	if elapsed := time.Since(start); elapsed < 15*time.Millisecond {
+		t.Fatalf("second crawl-delay wait = %v, want at least 15ms", elapsed)
+	}
+}
+
+func TestCrawlDelayFlagOverridesRobots(t *testing.T) {
+	seed, _ := urlx.ParseSeed("https://ex.com")
+	cfg := DefaultConfig()
+	cfg.RespectRobots = true
+	cfg.CrawlDelay = 20 * time.Millisecond
+	c := New(seed, cfg, nil)
+	c.robots = &robots.Matcher{CrawlDelay: time.Minute}
+	c.setupCrawlDelayLimiter()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	if !c.waitForCrawlDelay(ctx) {
+		t.Fatal("first crawl-delay wait returned false")
+	}
+
+	start := time.Now()
+	if !c.waitForCrawlDelay(ctx) {
+		t.Fatal("second crawl-delay wait returned false")
+	}
+	elapsed := time.Since(start)
+	if elapsed < 15*time.Millisecond {
+		t.Fatalf("second crawl-delay wait = %v, want at least 15ms", elapsed)
+	}
+	if elapsed > 150*time.Millisecond {
+		t.Fatalf("second crawl-delay wait = %v, override likely ignored", elapsed)
 	}
 }
 

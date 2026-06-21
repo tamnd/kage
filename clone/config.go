@@ -57,6 +57,7 @@ type Config struct {
 	ExcludePaths      []string
 
 	RespectRobots  bool
+	CrawlDelay     time.Duration // override robots.txt Crawl-delay when > 0
 	FollowSitemap  bool
 	Headless       bool
 	KeepNoscript   bool
