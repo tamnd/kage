@@ -123,6 +123,7 @@ The flags you'll actually reach for:
 | `--workers` | `4` | How many pages to render at once |
 | `--no-robots` | `false` | Ignore `robots.txt` (be nice) |
 | `--crawl-delay` | `0s` | Override robots.txt `Crawl-delay` between page starts |
+| `--cookie` | | Cookie sent with every request, as `name=value` (repeatable, or a whole `"a=1; b=2"` header) — for login- or region-gated sites |
 | `-f, --force` | `false` | Delete any existing mirror for the host first |
 | `--chrome` | | Path to the Chrome/Chromium binary |
 

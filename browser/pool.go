@@ -20,6 +20,14 @@ import (
 	"github.com/go-rod/stealth"
 )
 
+// Cookie is a cookie injected into Chrome before any navigation, so login- or
+// region-gated pages render the way the authenticated user would see them.
+type Cookie struct {
+	Name   string
+	Value  string
+	Domain string // host the cookie applies to; subdomains are covered too
+}
+
 // Options configure a Pool.
 type Options struct {
 	Headless      bool          // run Chrome without a window
@@ -29,6 +37,7 @@ type Options struct {
 	Scroll        bool          // auto-scroll to trigger lazy-loaded media
 	ChromeBin     string        // explicit binary; empty = autodetect
 	ControlURL    string        // attach to an existing Chrome instead of launching
+	Cookies       []Cookie      // cookies seeded into Chrome before navigation
 }
 
 // DefaultOptions returns the baseline render settings.
@@ -207,6 +216,13 @@ func (p *Pool) getBrowser() (*rod.Browser, error) {
 		return nil, fmt.Errorf("connect Chrome: %w", err)
 	}
 
+	// Seed any configured cookies before the first navigation so a login- or
+	// region-gated site renders as the authenticated user, not the logged-out
+	// wall. Scoped to the seed host by the caller.
+	if err := setCookies(b, p.opts.Cookies); err != nil {
+		return nil, fmt.Errorf("set cookies: %w", err)
+	}
+
 	// kage never wants Chrome to write a file to disk. Every asset is fetched
 	// through kage's own downloader, which applies the size and media policy, so a
 	// Chrome-initiated download is only ever an accident: navigating an <a> link
@@ -223,6 +239,38 @@ func (p *Pool) getBrowser() (*rod.Browser, error) {
 
 	p.browser = b
 	return b, nil
+}
+
+// setCookies seeds Chrome with the given cookies so the very first navigation is
+// already authenticated. An empty list is a no-op (and never clears Chrome's
+// cookies — rod treats a nil slice as "clear all", which is not what an absent
+// --cookie flag should mean). Each cookie is scoped to its Domain with a root
+// path so every page under that host receives it.
+func setCookies(b *rod.Browser, cookies []Cookie) error {
+	params := cookieParams(cookies)
+	if len(params) == 0 {
+		return nil
+	}
+	return b.SetCookies(params)
+}
+
+// cookieParams builds the Chrome cookie parameters for the given cookies,
+// scoping each to its Domain with a root path so every page under that host
+// receives it. Entries with an empty name are dropped.
+func cookieParams(cookies []Cookie) []*proto.NetworkCookieParam {
+	params := make([]*proto.NetworkCookieParam, 0, len(cookies))
+	for _, ck := range cookies {
+		if ck.Name == "" {
+			continue
+		}
+		params = append(params, &proto.NetworkCookieParam{
+			Name:   ck.Name,
+			Value:  ck.Value,
+			Domain: ck.Domain,
+			Path:   "/",
+		})
+	}
+	return params
 }
 
 // Close shuts down the managed Chrome process.
