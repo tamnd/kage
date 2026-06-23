@@ -282,3 +282,21 @@ The image tag carries no `v` prefix (`ghcr.io/tamnd/kage:0.1.1`). The Homebrew a
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## Contributing
+
+We welcome contributions to **kage**! If you would like to contribute, please follow these guidelines:
+
+1. **Report Issues**: If you encounter any bugs or have feature requests, please open an issue in the GitHub repository. Provide as much detail as possible to help us understand the problem.
+
+2. **Fork the Repository**: Click the 'Fork' button on the top right of the repository page to create your own copy of the project.
+
+3. **Make Changes**: Clone your fork locally and make your changes. Ensure that your code adheres to the project's coding style.
+
+4. **Write Tests**: If you are adding new features or fixing bugs, please include tests to cover your changes.
+
+5. **Submit a Pull Request**: Once you are satisfied with your changes, submit a pull request to the main repository. Include a description of your changes and reference any related issues.
+
+6. **Follow the Code of Conduct**: Please be respectful and considerate in your interactions with the community.
+
+Thank you for considering contributing to **kage**!
