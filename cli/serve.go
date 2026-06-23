@@ -36,7 +36,7 @@ func newServeCmd() *cobra.Command {
 func runServe(ctx context.Context, dir, addr string) error {
 	info, err := os.Stat(dir)
 	if err != nil {
-		return fmt.Errorf("cannot serve %q: %w", dir, err)
+		return fmt.Errorf("cannot serve directory %q: it does not exist or is not accessible: %w", dir, err)
 	}
 	if !info.IsDir() {
 		return fmt.Errorf("%q is not a directory", dir)
