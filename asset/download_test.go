@@ -51,6 +51,44 @@ func TestGetRetriesTransientThenSucceeds(t *testing.T) {
 	}
 }
 
+func TestGetSendsCookieHeader(t *testing.T) {
+	var got string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get("Cookie")
+		w.Header().Set("Content-Type", "text/css")
+		_, _ = w.Write([]byte("body{}"))
+	}))
+	defer srv.Close()
+
+	d := NewDownloader("kage-test", 5*time.Second, 0)
+	d.Cookie = "session=abc; theme=dark"
+	u, _ := url.Parse(srv.URL + "/style.css")
+	if _, err := d.Get(context.Background(), u, ""); err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got != "session=abc; theme=dark" {
+		t.Errorf("Cookie header = %q; want %q", got, "session=abc; theme=dark")
+	}
+}
+
+func TestGetSendsNoCookieByDefault(t *testing.T) {
+	var got string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get("Cookie")
+		_, _ = w.Write([]byte("x"))
+	}))
+	defer srv.Close()
+
+	d := NewDownloader("kage-test", 5*time.Second, 0)
+	u, _ := url.Parse(srv.URL + "/x.png")
+	if _, err := d.Get(context.Background(), u, ""); err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got != "" {
+		t.Errorf("expected no Cookie header, got %q", got)
+	}
+}
+
 func TestGetDoesNotRetryPermanent(t *testing.T) {
 	var hits int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

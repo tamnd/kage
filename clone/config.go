@@ -6,10 +6,20 @@ package clone
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/tamnd/kage/urlx"
 )
+
+// Cookie is a single name=value cookie kage sends with every request it makes
+// during a clone — the Chrome page navigations, the asset downloads, and the
+// robots.txt and sitemap fetches — so a site behind a login or a cookie wall
+// can still be mirrored.
+type Cookie struct {
+	Name  string
+	Value string
+}
 
 // DefaultOutDir is where mirrors land unless --out overrides it: a per-user data
 // directory ($HOME/data/kage) so clones from anywhere collect in one place,
@@ -51,7 +61,12 @@ type Config struct {
 	RenderTimeout time.Duration // hard cap per page render
 	Scroll        bool
 
-	UserAgent         string
+	UserAgent string
+	// Cookies are sent with every request kage makes during the run (the Chrome
+	// page renders, the asset downloads, and the robots.txt and sitemap fetches),
+	// scoped to the seed host and its subdomains, so a login- or region-gated site
+	// can be cloned. They are empty by default.
+	Cookies           []Cookie
 	IncludeSubdomains bool
 	ScopePrefix       string
 	ExcludePaths      []string
@@ -129,6 +144,20 @@ func DefaultConfig() Config {
 		Resume:          true,
 		Persist:         true,
 	}
+}
+
+// CookieHeader serialises the configured cookies into a value for the Cookie
+// request header ("a=1; b=2"), or "" when none are set. Empty-named entries are
+// skipped so a stray pair never produces a malformed header.
+func (c Config) CookieHeader() string {
+	parts := make([]string, 0, len(c.Cookies))
+	for _, ck := range c.Cookies {
+		if ck.Name == "" {
+			continue
+		}
+		parts = append(parts, ck.Name+"="+ck.Value)
+	}
+	return strings.Join(parts, "; ")
 }
 
 // HostDir returns the mirror root for a seed host: <OutDir>/<host>.

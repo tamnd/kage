@@ -18,8 +18,9 @@ import (
 type Downloader struct {
 	Client    *http.Client
 	UserAgent string
-	MaxBytes  int64 // per-asset cap; 0 = unlimited
-	Retries   int   // extra attempts for a transient failure (0 = try once)
+	Cookie    string // value for the Cookie request header; empty sends none
+	MaxBytes  int64  // per-asset cap; 0 = unlimited
+	Retries   int    // extra attempts for a transient failure (0 = try once)
 }
 
 // NewDownloader builds a Downloader with a sane client and the given timeout.
@@ -104,6 +105,9 @@ func (d *Downloader) try(ctx context.Context, u *url.URL, referer string) (*Resu
 	}
 	if d.UserAgent != "" {
 		req.Header.Set("User-Agent", d.UserAgent)
+	}
+	if d.Cookie != "" {
+		req.Header.Set("Cookie", d.Cookie)
 	}
 	if referer != "" {
 		req.Header.Set("Referer", referer)

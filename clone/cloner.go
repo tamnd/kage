@@ -73,13 +73,15 @@ func New(seed *url.URL, cfg Config, logf Logf) *Cloner {
 	}
 	host := seed.Hostname()
 	outRoot := cfg.HostDir(host)
+	dl := asset.NewDownloader(cfg.UserAgent, cfg.Timeout, cfg.MaxAssetBytes)
+	dl.Cookie = cfg.CookieHeader()
 	return &Cloner{
 		cfg:         cfg,
 		seed:        seed,
 		seedHost:    host,
 		outRoot:     outRoot,
 		statePth:    filepath.Join(outRoot, cfg.Reserved, "state.json"),
-		dl:          asset.NewDownloader(cfg.UserAgent, cfg.Timeout, cfg.MaxAssetBytes),
+		dl:          dl,
 		httpC:       &http.Client{Timeout: cfg.Timeout},
 		robots:      robots.AllowAll(),
 		front:       newFrontier(),
@@ -144,6 +146,7 @@ func (c *Cloner) Run(ctx context.Context) (Result, error) {
 		Scroll:        c.cfg.Scroll,
 		ChromeBin:     c.cfg.ChromeBin,
 		ControlURL:    c.cfg.ControlURL,
+		Cookies:       c.browserCookies(),
 	})
 	defer func() { _ = c.pool.Close() }()
 
@@ -208,6 +211,9 @@ func (c *Cloner) loadRobots(ctx context.Context) {
 		return
 	}
 	req.Header.Set("User-Agent", c.cfg.UserAgent)
+	if h := c.cfg.CookieHeader(); h != "" {
+		req.Header.Set("Cookie", h)
+	}
 	resp, err := c.httpC.Do(req)
 	if err != nil {
 		return
@@ -241,7 +247,7 @@ func (c *Cloner) setupCrawlDelayLimiter() {
 func (c *Cloner) seedSitemaps(ctx context.Context) {
 	seeds := append([]string{}, c.robots.Sitemaps...)
 	seeds = append(seeds, c.seed.Scheme+"://"+c.seed.Host+"/sitemap.xml")
-	locs := collectSitemaps(ctx, c.httpC, c.cfg.UserAgent, seeds)
+	locs := collectSitemaps(ctx, c.httpC, c.cfg.UserAgent, c.cfg.CookieHeader(), seeds)
 	added := 0
 	for _, loc := range locs {
 		u, err := urlx.Normalize(c.seed, loc)
@@ -466,6 +472,20 @@ func (c *Cloner) enqueuePage(ctx context.Context, u *url.URL, depth int) bool {
 		}
 	}()
 	return true
+}
+
+// browserCookies maps the configured cookies to Chrome cookies scoped to the
+// seed host (and its subdomains), so gated pages render as the authenticated
+// user. It returns nil when no cookies are set, leaving Chrome's jar untouched.
+func (c *Cloner) browserCookies() []browser.Cookie {
+	if len(c.cfg.Cookies) == 0 {
+		return nil
+	}
+	out := make([]browser.Cookie, 0, len(c.cfg.Cookies))
+	for _, ck := range c.cfg.Cookies {
+		out = append(out, browser.Cookie{Name: ck.Name, Value: ck.Value, Domain: c.seedHost})
+	}
+	return out
 }
 
 // wantAsset reports whether an asset should be downloaded and localized, or left
