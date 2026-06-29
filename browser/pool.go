@@ -139,7 +139,7 @@ func (p *Pool) Render(ctx context.Context, rawURL string) (RenderResult, error) 
 		settle(page, p.opts.Settle)
 	}
 
-	html, err := page.HTML()
+	html, err := snapshotHTML(page)
 	if err != nil {
 		return RenderResult{}, fmt.Errorf("serialise %s: %w", rawURL, err)
 	}
