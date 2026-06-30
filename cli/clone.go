@@ -102,7 +102,7 @@ func newCloneCmd() *cobra.Command {
 func runClone(ctx context.Context, arg string, f *cloneFlags) error {
 	seed, err := urlx.ParseSeed(arg)
 	if err != nil {
-		return fmt.Errorf("invalid url %q: %w", arg, err)
+		return fmt.Errorf("invalid URL %q: %w. Please ensure the URL is correct and try again.", arg, err)
 	}
 	if f.crawlDelay < 0 {
 		return fmt.Errorf("--crawl-delay must be >= 0")
