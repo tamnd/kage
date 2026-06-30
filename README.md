@@ -300,3 +300,14 @@ We welcome contributions to **kage**! If you would like to contribute, please fo
 6. **Follow the Code of Conduct**: Please be respectful and considerate in your interactions with the community.
 
 Thank you for considering contributing to **kage**!
+
+## Contributing
+
+We welcome contributions to kage! Here are some ways you can help:
+
+1. **Report Issues**: If you encounter any bugs or have feature requests, please open an issue on our GitHub repository.
+2. **Submit Pull Requests**: If you would like to contribute code, please fork the repository, make your changes, and submit a pull request. Ensure that your code adheres to the project's style guidelines.
+3. **Documentation Improvements**: Help us improve the documentation by suggesting edits or adding new content.
+4. **Testing**: Run tests and help us ensure the project remains stable.
+
+Before contributing, please read our [Code of Conduct](CODE_OF_CONDUCT.md) to ensure a welcoming environment for all contributors.
