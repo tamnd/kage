@@ -159,6 +159,15 @@ homebrew_casks:
     commit_author:
       name: Duc-Tam Nguyen
       email: tamnd87@gmail.com
+    # Homebrew quarantines cask artifacts, and Gatekeeper kills quarantined
+    # binaries that are only ad-hoc signed (which cross-compiled Go binaries
+    # are). Strip the attribute at install so the binary runs first try.
+    hooks:
+      post:
+        install: |
+          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status.zero?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/kage"]
+          end
 
 scoops:
   # Scoop manifest for Windows, pushed to the bucket repository. It installs the
