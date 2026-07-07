@@ -6,6 +6,13 @@ All notable changes to kage are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `kage clone --cookie` sends cookies with every request the crawl makes, so a site behind a login or a region/cookie wall can be cloned.
+  The cookies are attached to all four request paths: the Chrome page navigations (seeded into the browser before the first load), the asset downloads, and the `robots.txt` and `sitemap.xml` fetches — so the authenticated session is consistent across the whole run rather than only the pages.
+  Pass a single `name=value` pair, repeat the flag for several cookies, or paste a whole `Cookie` header straight from the browser's devtools in one value (`--cookie "session=abc; theme=dark"`).
+  Browser cookies are scoped to the seed host and its subdomains; the HTTP fetches send the same header, and because off-domain assets are left on the live web by default the cookies are not leaked to third-party hosts.
+
 ## [0.3.6] - 2026-06-19
 
 ### Fixed

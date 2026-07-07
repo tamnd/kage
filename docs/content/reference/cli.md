@@ -50,6 +50,7 @@ images, and fonts, and writes a browsable mirror to `<out>/<host>/`.
 | `--crawl-delay` | `0s` | Override robots.txt `Crawl-delay` between page starts (0 = use robots.txt) |
 | `--no-sitemap` | `false` | Do not seed URLs from `sitemap.xml` |
 | `--user-agent` | Chrome UA | User-Agent for asset and robots fetches |
+| `--cookie` | none | Cookie sent with every request, as `name=value`; pass a whole header (`"a=1; b=2"`) or repeat the flag. Scoped to the seed host — useful for login- or region-gated sites |
 
 ### Rendering
 

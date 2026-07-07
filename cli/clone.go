@@ -33,6 +33,7 @@ type cloneFlags struct {
 	renderTO       time.Duration
 	scroll         bool
 	userAgent      string
+	cookies        []string
 	subdomains     bool
 	scopePrefix    string
 	exclude        []string
@@ -81,6 +82,7 @@ func newCloneCmd() *cobra.Command {
 	fs.DurationVar(&f.renderTO, "render-timeout", 30*time.Second, "hard cap per page render")
 	fs.BoolVar(&f.scroll, "scroll", false, "auto-scroll each page to trigger lazy loading")
 	fs.StringVar(&f.userAgent, "user-agent", clone.DefaultUserAgent, "User-Agent for asset and robots fetches")
+	fs.StringArrayVar(&f.cookies, "cookie", nil, "cookie to send with every request, as name=value; pass a whole header (\"a=1; b=2\") or repeat the flag")
 	fs.BoolVar(&f.subdomains, "subdomains", false, "treat subdomains of the seed host as in scope")
 	fs.StringVar(&f.scopePrefix, "scope-prefix", "", "only crawl pages whose path starts with this prefix")
 	fs.StringSliceVar(&f.exclude, "exclude", nil, "path prefixes to skip (repeatable)")
@@ -140,6 +142,11 @@ func runClone(ctx context.Context, arg string, f *cloneFlags) error {
 	cfg.RenderTimeout = f.renderTO
 	cfg.Scroll = f.scroll
 	cfg.UserAgent = f.userAgent
+	cookies, err := parseCookies(f.cookies)
+	if err != nil {
+		return err
+	}
+	cfg.Cookies = cookies
 	cfg.IncludeSubdomains = f.subdomains
 	cfg.ScopePrefix = f.scopePrefix
 	cfg.ExcludePaths = f.exclude
@@ -203,6 +210,30 @@ func runClone(ctx context.Context, arg string, f *cloneFlags) error {
 		fmt.Fprintln(os.Stderr, styleWarn.Render("interrupted; resume state saved (rerun to continue)"))
 	}
 	return nil
+}
+
+// parseCookies turns the repeated --cookie flag values into clone.Cookie pairs.
+// Each value is either a single "name=value" pair or a whole Cookie header
+// ("a=1; b=2"), so a user can paste one straight from the browser's devtools or
+// build the list up flag by flag. Whitespace around names and separators is
+// trimmed; an entry with no "=" or an empty name is a usage error.
+func parseCookies(values []string) ([]clone.Cookie, error) {
+	var out []clone.Cookie
+	for _, v := range values {
+		for _, pair := range strings.Split(v, ";") {
+			pair = strings.TrimSpace(pair)
+			if pair == "" {
+				continue
+			}
+			name, val, ok := strings.Cut(pair, "=")
+			name = strings.TrimSpace(name)
+			if !ok || name == "" {
+				return nil, fmt.Errorf("invalid --cookie %q: want name=value", pair)
+			}
+			out = append(out, clone.Cookie{Name: name, Value: strings.TrimSpace(val)})
+		}
+	}
+	return out, nil
 }
 
 // progressLine renders the single-line live counter. "pages" is the count of
