@@ -6,6 +6,15 @@ All notable changes to kage are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.3.9] - 2026-07-08
+
+### Fixed
+
+- The Windows build no longer embeds the leakless watchdog binary that Windows Defender flags as `Trojan:Win32/Kepavll!rfn`, which made a fresh `scoop install` fail with a virus warning on `leakless.exe` ([#68](https://github.com/tamnd/kage/issues/68)).
+  go-rod's launcher imports [leakless](https://github.com/ysmood/leakless), which base64/gzip-embeds a prebuilt helper for every platform and links the Windows one into `kage.exe`.
+  kage already launches Chrome with leakless disabled, so the helper never ran, only added the flagged bytes.
+  A `replace` directive now points the package at an API-compatible stub under `third_party/leakless` that carries no embedded binary, dropping about 1.28 MB from the Windows build.
+
 ## [0.3.6] - 2026-06-19
 
 ### Fixed
@@ -255,7 +264,8 @@ can browse offline, with every script stripped out.
   a multi-arch container image on GHCR (Chromium bundled), checksums, SBOMs, and
   a cosign signature, all cut from one version tag by GoReleaser.
 
-[Unreleased]: https://github.com/tamnd/kage/compare/v0.3.4...HEAD
+[Unreleased]: https://github.com/tamnd/kage/compare/v0.3.9...HEAD
+[0.3.9]: https://github.com/tamnd/kage/compare/v0.3.8...v0.3.9
 [0.3.4]: https://github.com/tamnd/kage/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/tamnd/kage/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/tamnd/kage/compare/v0.3.1...v0.3.2
