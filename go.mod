@@ -54,3 +54,11 @@ require (
 	golang.org/x/text v0.38.0 // indirect
 	google.golang.org/protobuf v1.34.2 // indirect
 )
+
+// go-rod's launcher imports github.com/ysmood/leakless, which base64/gzip-embeds
+// a prebuilt leakless.exe into the Windows build. Antivirus engines flag that
+// embedded helper as malware and quarantine kage on install (issue #68). kage
+// always launches Chrome with leakless disabled (browser/leakless.go), so the
+// guard is dead weight; this replace swaps in an API-compatible stub that
+// carries no embedded binary.
+replace github.com/ysmood/leakless => ./third_party/leakless
