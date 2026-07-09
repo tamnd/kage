@@ -97,11 +97,16 @@ func (p *Pool) Render(ctx context.Context, rawURL string) (RenderResult, error) 
 		return RenderResult{}, err
 	}
 
-	page, err := stealth.Page(b)
+	// 在后台创建页面，避免 headful 模式下每次新建 tab 都把 Chrome 窗口拉到前台抢夺焦点。
+	// 与 stealth.Page 的唯一区别是设置了 Background:true；反检测脚本仍由 stealth.JS 注入。
+	page, err := b.Page(proto.TargetCreateTarget{Background: true})
 	if err != nil {
 		return RenderResult{}, fmt.Errorf("new page: %w", err)
 	}
 	defer func() { _ = page.Close() }()
+	if _, err := page.EvalOnNewDocument(stealth.JS); err != nil {
+		return RenderResult{}, fmt.Errorf("inject stealth: %w", err)
+	}
 
 	page = page.Context(ctx).Timeout(p.opts.RenderTimeout)
 
