@@ -126,6 +126,45 @@ func TestRenderCapturesFinalDOM(t *testing.T) {
 	}
 }
 
+// TestRenderInjectsStealthScript verifies that Render still injects the stealth
+// anti-detection script after switching from stealth.Page(b) to a manual
+// b.Page(Background:true) + EvalOnNewDocument(stealth.JS). The stealth script
+// normalizes navigator.languages to ["en-US","en"] (without it, Chrome reports
+// ["en"]), which serves as a reliable indicator that injection succeeded.
+func TestRenderInjectsStealthScript(t *testing.T) {
+	if testing.Short() {
+		t.Skip("render test drives Chrome; skipped under -short")
+	}
+	if _, ok := LookChrome(); !ok {
+		t.Skip("no Chrome/Chromium found; skipping render test")
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		// Page JS writes navigator.languages into the DOM for assertion.
+		_, _ = w.Write([]byte(`<!doctype html><html><body>
+<div id="langs"></div>
+<script>document.getElementById("langs").textContent = JSON.stringify(navigator.languages);</script>
+</body></html>`))
+	}))
+	defer srv.Close()
+
+	p := New(Options{Headless: true, Workers: 1, Settle: 300 * time.Millisecond, RenderTimeout: 20 * time.Second})
+	defer func() { _ = p.Close() }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	res, err := p.Render(ctx, srv.URL)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	// With stealth injected, navigator.languages is ["en-US","en"]; without it, ["en"].
+	if !strings.Contains(res.HTML, `["en-US","en"]`) {
+		t.Errorf("stealth script not injected: navigator.languages should be [\"en-US\",\"en\"], got HTML:\n%s", res.HTML)
+	}
+}
+
 func TestIsHTML(t *testing.T) {
 	cases := []struct {
 		ct   string
