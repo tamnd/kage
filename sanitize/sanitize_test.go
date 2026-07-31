@@ -177,8 +177,8 @@ func TestCharsetAddedWhenMissing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !rep.CharsetAdded {
-		t.Error("CharsetAdded = false, want true")
+	if !rep.CharsetFixed {
+		t.Error("CharsetFixed = false, want true")
 	}
 	s := string(out)
 	if !strings.Contains(strings.ToLower(s), `<meta charset="utf-8"/>`) {
@@ -266,21 +266,77 @@ func TestMobileReadableSkipsExistingViewport(t *testing.T) {
 }
 
 func TestCharsetNotDuplicated(t *testing.T) {
-	// A page that already declares a charset, in either form, is left alone.
-	cases := []string{
-		`<html><head><meta charset="utf-8"><title>x</title></head><body></body></html>`,
-		`<html><head><meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1"><title>x</title></head><body></body></html>`,
+	// A page that already declares utf-8 is left alone.
+	in := `<html><head><meta charset="utf-8"><title>x</title></head><body></body></html>`
+	out, rep, err := Strip([]byte(in), Options{})
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, in := range cases {
-		out, rep, err := Strip([]byte(in), Options{})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if rep.CharsetAdded {
-			t.Errorf("CharsetAdded = true for a page that already declares one:\n%s", in)
-		}
-		if n := strings.Count(strings.ToLower(string(out)), "charset"); n != 1 {
-			t.Errorf("charset count = %d, want 1:\n%s", n, out)
-		}
+	if rep.CharsetFixed {
+		t.Error("CharsetFixed = true for a page that already declares utf-8")
+	}
+	if n := strings.Count(strings.ToLower(string(out)), "charset"); n != 1 {
+		t.Errorf("charset count = %d, want 1:\n%s", n, out)
+	}
+}
+
+func TestCharsetRewritesNonUTF8(t *testing.T) {
+	// Output is always UTF-8; a stale ISO-8859-1 declaration must be rewritten
+	// so a reader does not mojibake the file (issue #16).
+	in := `<html><head><meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1"><title>x</title></head><body></body></html>`
+	out, rep, err := Strip([]byte(in), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rep.CharsetFixed {
+		t.Error("CharsetFixed = false, want true")
+	}
+	s := strings.ToLower(string(out))
+	if strings.Contains(s, "iso-8859-1") {
+		t.Errorf("ISO-8859-1 declaration survived:\n%s", out)
+	}
+	if !strings.Contains(s, "charset=utf-8") {
+		t.Errorf("expected charset=utf-8 rewrite:\n%s", out)
+	}
+}
+
+func TestActiveContentEscapesRemoved(t *testing.T) {
+	in := `<!doctype html><html><head><base href="https://evil.example/"></head><body>
+<iframe srcdoc="<script>alert(1)</script>"></iframe>
+<iframe src="data:text/html,<script>alert(1)</script>"></iframe>
+<iframe src="https://tracker.example/frame"></iframe>
+<object data="/widget.html" type="text/html"></object>
+<embed src="https://cdn.example/player.html">
+<object data="/logo.png" type="image/png"></object>
+</body></html>`
+	out, rep, err := Strip([]byte(in), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	if strings.Contains(s, "<base") {
+		t.Error("<base> survived")
+	}
+	if strings.Contains(s, "srcdoc") {
+		t.Error("srcdoc survived")
+	}
+	if strings.Contains(strings.ToLower(s), "data:text/html") {
+		t.Error("data:text/html iframe survived")
+	}
+	if strings.Contains(s, "tracker.example") {
+		t.Error("external iframe src survived")
+	}
+	if strings.Contains(s, "widget.html") || strings.Contains(s, "player.html") {
+		t.Error("HTML object/embed survived")
+	}
+	// A non-script image object must survive.
+	if !strings.Contains(s, "logo.png") {
+		t.Error("image object should survive")
+	}
+	if rep.BaseTagsRemoved < 1 {
+		t.Errorf("BaseTagsRemoved = %d, want >= 1", rep.BaseTagsRemoved)
+	}
+	if rep.ActiveFramesRemoved < 1 {
+		t.Errorf("ActiveFramesRemoved = %d, want >= 1", rep.ActiveFramesRemoved)
 	}
 }

@@ -6,6 +6,11 @@ weight: 40
 
 The authoritative, commit-level history lives in [`CHANGELOG.md`](https://github.com/tamnd/kage/blob/main/CHANGELOG.md) and on the [releases page](https://github.com/tamnd/kage/releases). This page summarises each version.
 
+## Unreleased
+
+- **Inert-snapshot gaps closed.** `<base href>`, `iframe` `srcdoc` / `data:text/html`, live remote frames, and HTML/SVG `object`/`embed` no longer reintroduce live or executable content.
+- **Redirects resolve correctly.** Relative links use the post-redirect URL and any document `<base href>`, and non-UTF-8 charset metas are rewritten to UTF-8.
+
 ## v0.3.9
 
 A fix for the antivirus warning some Windows users hit when installing kage.

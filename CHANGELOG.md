@@ -6,6 +6,12 @@ All notable changes to kage are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Saved pages no longer re-root relative URLs against the live origin via a leftover `<base href>`, and active content that escaped the script stripper is neutralized: `iframe` `srcdoc` and `data:text/html` sources, live remote frames, and HTML/SVG `object`/`embed` carriers.
+- Relative links on pages that redirected are resolved against the browser's final URL (and any document `<base href>`), while the page is still written under the discovered URL so existing offline links keep working.
+- Non-UTF-8 `<meta charset>` / Content-Type charset declarations are rewritten to `utf-8`, since kage always serialises pages as UTF-8 ([#16](https://github.com/tamnd/kage/issues/16)).
+
 ## [0.3.9] - 2026-07-08
 
 ### Fixed
