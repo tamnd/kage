@@ -22,6 +22,7 @@ import (
 
 	"github.com/chromedp/cdproto/browser"
 	"github.com/chromedp/cdproto/network"
+	cdpruntime "github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 )
 
@@ -104,6 +105,12 @@ func (p *Pool) Render(ctx context.Context, rawURL string) (RenderResult, error) 
 
 	tabCtx, cancel := chromedp.NewContext(p.allocCtx)
 	defer cancel()
+	// The tab context is rooted at the pool's allocator, which outlives any
+	// single Render; forward the caller's cancellation so an interrupt (Ctrl-C
+	// during a clone) aborts an in-flight page at once instead of waiting out
+	// the render timeout below.
+	stop := context.AfterFunc(ctx, cancel)
+	defer stop()
 
 	timeout := p.opts.RenderTimeout
 	if timeout <= 0 {
@@ -115,16 +122,14 @@ func (p *Pool) Render(ctx context.Context, rawURL string) (RenderResult, error) 
 	// Enable network events and deny browser-initiated downloads before any
 	// navigation so a zip/CSV never lands in the user's Downloads folder and so
 	// the main-document content-type watcher can classify non-HTML navigations
-	// (issue #32).
-	if err := chromedp.Run(tabCtx, chromedp.ActionFunc(func(ctx context.Context) error {
+	// (issue #32). Best-effort: if a call is unsupported, the content-type
+	// watcher below still keeps binaries out of the mirror.
+	_ = chromedp.Run(tabCtx, chromedp.ActionFunc(func(ctx context.Context) error {
 		if err := network.Enable().Do(ctx); err != nil {
 			return err
 		}
 		return browser.SetDownloadBehavior(browser.SetDownloadBehaviorBehaviorDeny).Do(ctx)
-	})); err != nil {
-		// Best-effort: non-HTML detection still keeps binaries out of the mirror.
-		_ = err
-	}
+	}))
 	mainContentType := watchMainDocument(tabCtx)
 
 	// chromedp.Navigate waits for the frame's load event. A denied download
@@ -152,11 +157,13 @@ func (p *Pool) Render(ctx context.Context, rawURL string) (RenderResult, error) 
 		chromedp.Location(&finalURL),
 		chromedp.Title(&title),
 	); err != nil {
-		if isObjRefChainError(err) && html != "" {
-			// Partial success: keep what we have.
-		} else if html == "" {
+		if html == "" {
 			return RenderResult{}, fmt.Errorf("serialise %s: %w", rawURL, err)
 		}
+		// Partial success: the DOM serialised but a follow-up read (final URL or
+		// title) failed. Keep the rendered page and say so, rather than dropping
+		// it or failing silently.
+		fmt.Fprintf(os.Stderr, "kage: serialise %s: %v (keeping the rendered DOM)\n", rawURL, err)
 	}
 	if finalURL == "" {
 		finalURL = rawURL
@@ -437,22 +444,28 @@ func isObjRefChainError(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "Object reference chain is too long")
 }
 
-// settle waits for the network to go quiet for d, recovering from any panic and
-// capping the wait so a chatty page can never hang the worker.
+// settle waits a fixed quiet window d after load so late-arriving DOM changes
+// land in the snapshot. It approximates network idle with a plain sleep —
+// chromedp has no built-in equivalent of rod's WaitRequestIdle — bounded by
+// ctx so a cancelled or timed-out render never hangs the worker.
 func settle(ctx context.Context, d time.Duration) {
 	if d <= 0 {
 		return
 	}
-	// chromedp has no built-in network-idle helper matching rod's; approximate
-	// with a quiet sleep after load. Good enough for the settle window.
 	select {
 	case <-ctx.Done():
 	case <-time.After(d):
 	}
 }
 
-// autoScroll scrolls to the bottom in steps to trigger lazy-loaded images.
+// autoScroll scrolls to the bottom in steps to trigger lazy-loaded images. The
+// evaluation awaits the scroll promise — chromedp's Evaluate does not await
+// promises unless asked, unlike rod's Eval — so Render only continues once the
+// page has been walked to the bottom and back.
 func autoScroll(ctx context.Context) {
+	await := func(p *cdpruntime.EvaluateParams) *cdpruntime.EvaluateParams {
+		return p.WithAwaitPromise(true)
+	}
 	_ = chromedp.Run(ctx, chromedp.Evaluate(`(() => new Promise((resolve) => {
 		let total = 0;
 		const step = 800;
@@ -465,5 +478,5 @@ func autoScroll(ctx context.Context) {
 				resolve(true);
 			}
 		}, 100);
-	}))()`, nil))
+	}))()`, nil, await))
 }

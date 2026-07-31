@@ -12,6 +12,14 @@ All notable changes to kage are recorded here. The format follows
   The module no longer carries a `replace` directive for `github.com/ysmood/leakless`.
   Headless Chrome is driven with [chromedp](https://github.com/chromedp/chromedp), so the antivirus-flagged leakless helper is not linked at all (also keeping [#68](https://github.com/tamnd/kage/issues/68) fixed without a replace).
 
+### Changed
+
+- Page renders no longer apply [go-rod-stealth](https://github.com/go-rod/stealth)'s anti-detection evasions, which the chromedp migration does not carry over.
+  Chrome still launches with automation flags off, but pages now see headless Chrome's default user agent on renders (asset and robots fetches still use `--user-agent`).
+  Sites with aggressive bot detection may serve a clone different content than before.
+- `--settle` is now a fixed wait after page load instead of a network-idle watch: chromedp has no equivalent of go-rod's request-idle helper.
+  A page that keeps fetching past the settle window may be snapshotted slightly earlier than before.
+
 ## [0.3.9] - 2026-07-08
 
 ### Fixed

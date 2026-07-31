@@ -199,3 +199,78 @@ func TestRenderRoutesNonHTML(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderAbortsOnCallerCancel(t *testing.T) {
+	if testing.Short() {
+		t.Skip("render test drives Chrome; skipped under -short")
+	}
+	if _, ok := LookChrome(); !ok {
+		t.Skip("no Chrome/Chromium found; skipping render test")
+	}
+
+	// A server that never answers, so the render can only end by cancellation.
+	// The caller's context must abort the in-flight navigation (Ctrl-C during a
+	// clone), not wait out the render timeout.
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-release
+	}))
+	defer func() { close(release); srv.Close() }()
+
+	p := New(Options{Headless: true, Workers: 1, RenderTimeout: 30 * time.Second})
+	defer func() { _ = p.Close() }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	start := time.Now()
+	_, err := p.Render(ctx, srv.URL)
+	if err == nil {
+		t.Error("Render against a hanging server: got nil error, want a cancellation error")
+	}
+	if el := time.Since(start); el > 10*time.Second {
+		t.Errorf("Render blocked %v with a 2s caller context and 30s render timeout; want a prompt abort", el)
+	}
+}
+
+func TestRenderScrollCapturesLazyContent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("render test drives Chrome; skipped under -short")
+	}
+	if _, ok := LookChrome(); !ok {
+		t.Skip("no Chrome/Chromium found; skipping render test")
+	}
+
+	// A tall page that injects content only once the visitor scrolls far down.
+	// The snapshot must wait for the scroll to finish, or the node is missed.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(`<!doctype html><html><body>
+<div style="height:20000px"></div>
+<script>
+window.addEventListener("scroll", function () {
+	if (window.scrollY > 5000 && !document.getElementById("lazy")) {
+		const d = document.createElement("div");
+		d.id = "lazy";
+		d.textContent = "loaded-on-scroll";
+		document.body.appendChild(d);
+	}
+});
+</script>
+</body></html>`))
+	}))
+	defer srv.Close()
+
+	p := New(Options{Headless: true, Workers: 1, Settle: 300 * time.Millisecond, RenderTimeout: 20 * time.Second, Scroll: true})
+	defer func() { _ = p.Close() }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	res, err := p.Render(ctx, srv.URL)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	if !strings.Contains(res.HTML, "loaded-on-scroll") {
+		t.Errorf("scroll-triggered content missing from the snapshot:\n%s", res.HTML)
+	}
+}
