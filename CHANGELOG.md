@@ -6,6 +6,19 @@ All notable changes to kage are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `--exclude` matches path prefixes (and descendants), not arbitrary path substrings, matching the docs.
+
+### Changed
+
+- Removed the unused `--traversal` flag (it was accepted but never read by the crawl engine).
+- `--max-pages` is documented as "attempt at most N page renders"; failed renders count toward the cap.
+
+### Added
+
+- `CONTRIBUTING.md` with build, test, and pull-request expectations.
+
 ## [0.3.9] - 2026-07-08
 
 ### Fixed

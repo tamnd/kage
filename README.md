@@ -107,18 +107,18 @@ kage clone example.com --subdomains --scroll
 kage clone paulgraham.com --refresh
 ```
 
-A clone is a polite, breadth-first crawl. It reads `robots.txt`, seeds itself from `sitemap.xml`, and stays on the seed host unless you tell it otherwise. It is also stubbornly idempotent: each page is keyed by the file it writes, so the same essay reached over http and https, with or without a trailing slash, gets fetched exactly once. Hit Ctrl-C and it saves its place on the way out; run it again and it picks up where it stopped. `--refresh` re-renders in place, `--force` wipes the host and starts clean.
+A clone is a polite, concurrent crawl. It reads `robots.txt`, seeds itself from `sitemap.xml`, and stays on the seed host unless you tell it otherwise. It is also stubbornly idempotent: each page is keyed by the file it writes, so the same essay reached over http and https, with or without a trailing slash, gets fetched exactly once. Hit Ctrl-C and it saves its place on the way out; run it again and it picks up where it stopped. `--refresh` re-renders in place, `--force` wipes the host and starts clean.
 
 The flags you'll actually reach for:
 
 | Flag | Default | Meaning |
 |------|---------|---------|
 | `-o, --out` | `$HOME/data/kage` | Output root; the mirror lands in `<out>/<host>/` |
-| `-p, --max-pages` | `0` | Stop after N pages (0 = no limit) |
+| `-p, --max-pages` | `0` | Attempt at most N page renders (0 = no limit); failures count |
 | `-d, --max-depth` | `0` | How many links deep to follow (0 = no limit) |
 | `--scope-prefix` | | Only crawl paths starting with this prefix |
 | `--subdomains` | `false` | Treat subdomains of the seed host as in scope |
-| `--exclude` | | Path prefixes to skip (repeatable) |
+| `--exclude` | | Path prefixes to skip (path and descendants; repeatable) |
 | `--scroll` | `false` | Auto-scroll each page to trigger lazy loading |
 | `--workers` | `4` | How many pages to render at once |
 | `--no-robots` | `false` | Ignore `robots.txt` (be nice) |

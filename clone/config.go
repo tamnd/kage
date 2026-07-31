@@ -31,9 +31,8 @@ type Config struct {
 	Workers       int // page render workers
 	AssetWorkers  int // HTTP asset download workers
 	BrowserPages  int // Chrome page-pool size
-	MaxPages      int // stop after N pages (0 = unlimited)
-	MaxDepth      int // BFS/DFS depth cap (0 = unlimited)
-	Traversal     string
+	MaxPages      int // attempt at most N page renders (0 = unlimited)
+	MaxDepth      int // link-follow depth cap (0 = unlimited)
 	MaxAssetBytes int64
 
 	// AssetSameDomain, when set, localizes only assets whose host shares the
@@ -118,7 +117,6 @@ func DefaultConfig() Config {
 		MaxAssetBytes:   25 << 20,
 		AssetSameDomain: true,
 		SkipAssetExts:   DefaultSkipAssetExts(),
-		Traversal:       "bfs",
 		Timeout:         30 * time.Second,
 		Settle:          1500 * time.Millisecond,
 		RenderTimeout:   30 * time.Second,

@@ -35,12 +35,11 @@ images, and fonts, and writes a browsable mirror to `<out>/<host>/`.
 
 | Flag | Default | Meaning |
 |------|---------|---------|
-| `-p, --max-pages` | `0` | Stop after N pages (0 = unlimited) |
+| `-p, --max-pages` | `0` | Attempt at most N page renders (0 = unlimited); failures count toward the cap |
 | `-d, --max-depth` | `0` | Link-follow depth cap (0 = unlimited) |
 | `--scope-prefix` | | Only crawl pages whose path starts with this prefix |
 | `--subdomains` | `false` | Treat subdomains of the seed host as in scope |
-| `--exclude` | | Path prefixes to skip (repeatable) |
-| `--traversal` | `bfs` | Frontier order: `bfs` or `dfs` |
+| `--exclude` | | Path prefixes to skip (repeatable); matches the path and its descendants, not substrings elsewhere |
 
 ### Politeness
 

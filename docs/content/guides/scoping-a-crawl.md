@@ -32,7 +32,10 @@ kage clone example.com --scope-prefix /docs
 Only pages whose path starts with `/docs` are followed. Assets are still fetched
 from wherever the page references them, so the section renders correctly.
 
-To skip parts of a site, exclude path prefixes (repeatable):
+To skip parts of a site, exclude path prefixes (repeatable). An exclude matches
+that path and everything under it (`/archive` skips `/archive` and
+`/archive/2020`), but not an unrelated path that merely contains the string
+(`/map/archive-index` is still crawled):
 
 ```bash
 kage clone example.com --exclude /archive --exclude /tags

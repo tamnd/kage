@@ -6,6 +6,10 @@ weight: 40
 
 The authoritative, commit-level history lives in [`CHANGELOG.md`](https://github.com/tamnd/kage/blob/main/CHANGELOG.md) and on the [releases page](https://github.com/tamnd/kage/releases). This page summarises each version.
 
+## Unreleased
+
+- **Crawl controls match their documentation.** `--exclude` is a real path prefix, the unused `--traversal` flag is gone, and `--max-pages` clearly counts failed render attempts.
+
 ## v0.3.9
 
 A fix for the antivirus warning some Windows users hit when installing kage.
