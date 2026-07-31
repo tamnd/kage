@@ -340,3 +340,49 @@ func TestActiveContentEscapesRemoved(t *testing.T) {
 		t.Errorf("ActiveFramesRemoved = %d, want >= 1", rep.ActiveFramesRemoved)
 	}
 }
+
+func TestLocalisedSVGFrameNeutralized(t *testing.T) {
+	// A same-host SVG takes the raw asset path — downloaded, never sanitized —
+	// yet a frame pointing at the localised copy would run its scripts offline.
+	in := `<html><head></head><body><iframe src="../assets/ex.com/img/icon.svg"></iframe></body></html>`
+	out, rep, err := Strip([]byte(in), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(out), "icon.svg") {
+		t.Errorf("localised .svg frame src survived:\n%s", out)
+	}
+	if rep.ActiveFramesRemoved < 1 {
+		t.Errorf("ActiveFramesRemoved = %d, want >= 1", rep.ActiveFramesRemoved)
+	}
+}
+
+func TestInertDataImageFrameKept(t *testing.T) {
+	// Only the mediatype token decides: a base64 payload that happens to
+	// contain the text "xml" must not strip an inert data:image iframe.
+	in := `<html><head></head><body><iframe src="data:image/png;base64,AAAAxmlBBBB"></iframe></body></html>`
+	out, _, err := Strip([]byte(in), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), "data:image/png") {
+		t.Errorf("inert data:image/png frame lost its src:\n%s", out)
+	}
+}
+
+func TestLocalisedInertFramesKept(t *testing.T) {
+	// Same-host frames localised by the rewrite pipeline stay: an image asset
+	// (inert in a frame) and a rendered, sanitized page.
+	in := `<html><head></head><body><iframe src="../assets/ex.com/img/logo.png"></iframe><iframe src="../about/index.html"></iframe></body></html>`
+	out, _, err := Strip([]byte(in), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	if !strings.Contains(s, "logo.png") {
+		t.Errorf("image frame should survive:\n%s", out)
+	}
+	if !strings.Contains(s, "../about/index.html") {
+		t.Errorf("sanitized page frame should survive:\n%s", out)
+	}
+}

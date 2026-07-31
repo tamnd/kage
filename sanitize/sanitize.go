@@ -146,9 +146,7 @@ func clean(n *html.Node, opts Options, rep *Report) {
 				rep.BaseTagsRemoved++
 				continue
 			case atom.Iframe, atom.Frame:
-				if neutralizeActiveFrame(c, rep) {
-					// Element kept as an empty shell, or fully removed.
-				}
+				neutralizeActiveFrame(c, rep)
 			case atom.Object, atom.Embed:
 				// Same-domain HTML/SVG served through object/embed executes
 				// scripts offline when localised as a raw asset. Drop active
@@ -168,33 +166,30 @@ func clean(n *html.Node, opts Options, rep *Report) {
 
 // neutralizeActiveFrame strips iframe/frame carriers that would still run code
 // offline: srcdoc markup (not walked by the element sanitizer), data:text/html
-// URLs, and remote http(s) sources left pointing at the live web. A same-site
-// page/frame src is left for the asset rewriter to localise; after rewrite it
-// is a static file. Returns true when the frame was fully neutralized.
-func neutralizeActiveFrame(n *html.Node, rep *Report) bool {
-	// srcdoc holds raw HTML that never enters the element walk — drop it and
-	// clear the attribute so nothing executable remains.
-	if srcdoc := attr(n, "srcdoc"); srcdoc != "" {
-		setAttr(n, "srcdoc", "")
+// URLs, remote http(s) sources left pointing at the live web, and localised
+// raw assets that execute script inside a frame (.svg, .xml). The element
+// itself stays behind as an empty, inert shell.
+func neutralizeActiveFrame(n *html.Node, rep *Report) {
+	// srcdoc holds raw HTML that never enters the element walk — drop the
+	// attribute so nothing executable remains.
+	if attr(n, "srcdoc") != "" {
 		removeAttr(n, "srcdoc")
 		rep.ActiveFramesRemoved++
 	}
 	src := strings.TrimSpace(attr(n, "src"))
 	if src == "" {
-		return false
+		return
 	}
 	low := strings.ToLower(src)
 	switch {
 	case strings.HasPrefix(low, "javascript:"):
 		removeAttr(n, "src")
 		rep.JSURLsNeutralized++
-		return true
 	case strings.HasPrefix(low, "data:"):
 		// data:text/html, data:image/svg+xml, etc. can carry scripts.
 		if isActiveDataURL(low) {
 			removeAttr(n, "src")
 			rep.ActiveFramesRemoved++
-			return true
 		}
 	case strings.HasPrefix(low, "http://"), strings.HasPrefix(low, "https://"), strings.HasPrefix(low, "//"):
 		// An external live frame would phone home and run its own JS. Drop the
@@ -204,9 +199,20 @@ func neutralizeActiveFrame(n *html.Node, rep *Report) bool {
 		// is either external or was left remote intentionally.
 		removeAttr(n, "src")
 		rep.ActiveFramesRemoved++
-		return true
+	default:
+		// A relative src is a localised file. Same-host pages (…/index.html)
+		// were rendered and sanitized, so they stay; but .svg/.xml took the raw
+		// asset path (never sanitized) and still run script inside a frame —
+		// drop those, mirroring the object/embed carrier policy.
+		path := low
+		if i := strings.IndexAny(path, "?#"); i >= 0 {
+			path = path[:i]
+		}
+		if strings.HasSuffix(path, ".svg") || strings.HasSuffix(path, ".xml") {
+			removeAttr(n, "src")
+			rep.ActiveFramesRemoved++
+		}
 	}
-	return false
 }
 
 // neutralizePlugin reports whether an object/embed should be removed entirely
@@ -265,11 +271,17 @@ func isActiveDataURL(low string) bool {
 	if !strings.HasPrefix(low, "data:") {
 		return false
 	}
+	// Only the mediatype token before the first comma decides; the payload
+	// (base64 or percent-encoded text) may contain these substrings by chance.
+	mime := low[len("data:"):]
+	if i := strings.IndexByte(mime, ','); i >= 0 {
+		mime = mime[:i]
+	}
 	// data:text/html,...  data:image/svg+xml,...  data:application/xhtml+xml,...
-	return strings.Contains(low, "text/html") ||
-		strings.Contains(low, "image/svg") ||
-		strings.Contains(low, "xhtml") ||
-		strings.Contains(low, "xml")
+	return strings.Contains(mime, "text/html") ||
+		strings.Contains(mime, "image/svg") ||
+		strings.Contains(mime, "xhtml") ||
+		strings.Contains(mime, "xml")
 }
 
 func setAttr(n *html.Node, key, val string) {
