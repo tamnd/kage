@@ -6,6 +6,10 @@ All notable changes to kage are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Packing a host that has HTML but no root `index.html` synthesises a directory-index landing page so Kiwix and `kage open` no longer jump to an arbitrary first page ([#62](https://github.com/tamnd/kage/issues/62)).
+
 ## [0.3.9] - 2026-07-08
 
 ### Fixed

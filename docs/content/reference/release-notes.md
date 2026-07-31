@@ -6,6 +6,10 @@ weight: 40
 
 The authoritative, commit-level history lives in [`CHANGELOG.md`](https://github.com/tamnd/kage/blob/main/CHANGELOG.md) and on the [releases page](https://github.com/tamnd/kage/releases). This page summarises each version.
 
+## Unreleased
+
+- **ZIM packs get a usable landing page.** Hosts without a root `index.html` receive a synthetic directory index instead of opening an arbitrary first page ([#62](https://github.com/tamnd/kage/issues/62)).
+
 ## v0.3.9
 
 A fix for the antivirus warning some Windows users hit when installing kage.
