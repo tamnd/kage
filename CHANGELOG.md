@@ -6,6 +6,12 @@ All notable changes to kage are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `go install github.com/tamnd/kage/cmd/kage@latest` works again ([#72](https://github.com/tamnd/kage/issues/72)).
+  The module no longer carries a `replace` directive for `github.com/ysmood/leakless`.
+  Headless Chrome is driven with [chromedp](https://github.com/chromedp/chromedp), so the antivirus-flagged leakless helper is not linked at all (also keeping [#68](https://github.com/tamnd/kage/issues/68) fixed without a replace).
+
 ## [0.3.9] - 2026-07-08
 
 ### Fixed
@@ -14,6 +20,7 @@ All notable changes to kage are recorded here. The format follows
   go-rod's launcher imports [leakless](https://github.com/ysmood/leakless), which base64/gzip-embeds a prebuilt helper for every platform and links the Windows one into `kage.exe`.
   kage already launches Chrome with leakless disabled, so the helper never ran, only added the flagged bytes.
   A `replace` directive now points the package at an API-compatible stub under `third_party/leakless` that carries no embedded binary, dropping about 1.28 MB from the Windows build.
+  *(Superseded in Unreleased by the chromedp migration, which removes leakless entirely and restores `go install`.)*
 
 ## [0.3.6] - 2026-06-19
 

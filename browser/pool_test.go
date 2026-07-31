@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -81,14 +80,6 @@ func TestDisableSandboxContainer(t *testing.T) {
 	t.Setenv("IN_DOCKER", "true")
 	if off, reason := disableSandbox(); !off || reason != "container" {
 		t.Errorf("in container: got (%v, %q); want (true, container)", off, reason)
-	}
-}
-
-func TestLauncherLeaklessDisabledOnWindows(t *testing.T) {
-	got := launcherLeakless()
-	want := runtime.GOOS != "windows"
-	if got != want {
-		t.Errorf("launcherLeakless() = %v on %s; want %v", got, runtime.GOOS, want)
 	}
 }
 

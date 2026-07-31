@@ -258,7 +258,7 @@ The repo is split by concern:
 cmd/kage/   thin main: pins the main thread, then hands off to cli.Execute
 cli/        the cobra command tree and flag wiring
 clone/      the crawl: frontier, render workers, asset workers, resume state
-browser/    headless Chrome control and DOM snapshotting
+browser/    headless Chrome control (chromedp) and DOM snapshotting
 sanitize/   strip scripts, handlers, and javascript: URLs from the DOM
 asset/      download and localise CSS, images, and fonts
 urlx/       the deterministic URL-to-path mapping

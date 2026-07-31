@@ -16,7 +16,8 @@ locating the browser.
 | `CHROME_BIN` | Fallback Chrome path, read if `KAGE_CHROME` is unset. |
 
 If neither is set and no system Chrome is found in the usual install locations,
-kage's launcher can download a private copy of Chromium on first use.
+kage does not download Chromium for you; install a system browser or use the
+container image.
 
 ## Output layout
 

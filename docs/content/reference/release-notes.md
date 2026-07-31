@@ -6,11 +6,15 @@ weight: 40
 
 The authoritative, commit-level history lives in [`CHANGELOG.md`](https://github.com/tamnd/kage/blob/main/CHANGELOG.md) and on the [releases page](https://github.com/tamnd/kage/releases). This page summarises each version.
 
+## Unreleased
+
+- **`go install` works again.** The module no longer uses a `replace` for leakless. Chrome is driven with chromedp instead of go-rod, so the antivirus-flagged helper is not linked and Windows package installs stay clean ([#72](https://github.com/tamnd/kage/issues/72), [#68](https://github.com/tamnd/kage/issues/68)).
+
 ## v0.3.9
 
 A fix for the antivirus warning some Windows users hit when installing kage.
 
-- **The Windows build no longer ships the leakless helper antivirus flags.** kage renders pages with [go-rod](https://github.com/go-rod/rod), whose launcher pulls in [leakless](https://github.com/ysmood/leakless), a small watchdog that force-kills Chrome if kage exits. leakless carries a prebuilt helper binary for every platform and links the Windows one straight into `kage.exe`. Windows Defender recognises that helper as `Trojan:Win32/Kepavll!rfn` and quarantines it, so a fresh `scoop install` failed with a virus warning on `leakless.exe` ([#68](https://github.com/tamnd/kage/issues/68)). kage already launches Chrome with leakless switched off, so the helper never ran anyway. It is now replaced with a stub that carries no embedded binary, which drops about 1.28 MB from the Windows build and clears the warning. Thanks to John Pywtorak for the report. `go install`, unaffected before, stays clean.
+- **The Windows build no longer ships the leakless helper antivirus flags.** kage used to pull in [leakless](https://github.com/ysmood/leakless) via go-rod's launcher. A stub replace cleared the Defender false positive on install ([#68](https://github.com/tamnd/kage/issues/68)). That replace later broke `go install` ([#72](https://github.com/tamnd/kage/issues/72)); the Unreleased chromedp migration removes leakless entirely.
 
 ## v0.3.4
 

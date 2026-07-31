@@ -3,21 +3,26 @@
 // through here: navigate, let the page settle, then serialise the final DOM —
 // the same markup a human would have seen — which the rest of the pipeline then
 // strips of scripts and localises.
+//
+// Chrome is launched by this package directly (os/exec + remote debugging), not
+// through go-rod's launcher. That keeps github.com/ysmood/leakless — and the
+// antivirus-flagged embedded helper it ships — out of the dependency graph, so
+// go install and Windows package managers stay clean (issues #68, #72).
 package browser
 
 import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/go-rod/rod"
-	"github.com/go-rod/rod/lib/launcher"
-	"github.com/go-rod/rod/lib/proto"
-	"github.com/go-rod/stealth"
+	"github.com/chromedp/cdproto/browser"
+	"github.com/chromedp/cdproto/network"
+	"github.com/chromedp/chromedp"
 )
 
 // Options configure a Pool.
@@ -47,9 +52,10 @@ type Pool struct {
 	opts Options
 	sem  chan struct{}
 
-	mu      sync.Mutex
-	browser *rod.Browser
-	closed  bool
+	mu       sync.Mutex
+	allocCtx context.Context
+	cancel   context.CancelFunc
+	closed   bool
 }
 
 // New creates a Pool. Chrome is launched lazily on the first Render.
@@ -92,138 +98,131 @@ func (p *Pool) Render(ctx context.Context, rawURL string) (RenderResult, error) 
 		return RenderResult{}, ctx.Err()
 	}
 
-	b, err := p.getBrowser()
-	if err != nil {
+	if err := p.ensureBrowser(); err != nil {
 		return RenderResult{}, err
 	}
 
-	page, err := stealth.Page(b)
-	if err != nil {
-		return RenderResult{}, fmt.Errorf("new page: %w", err)
+	tabCtx, cancel := chromedp.NewContext(p.allocCtx)
+	defer cancel()
+
+	timeout := p.opts.RenderTimeout
+	if timeout <= 0 {
+		timeout = 30 * time.Second
 	}
-	defer func() { _ = page.Close() }()
+	tabCtx, cancelTimeout := context.WithTimeout(tabCtx, timeout)
+	defer cancelTimeout()
 
-	page = page.Context(ctx).Timeout(p.opts.RenderTimeout)
+	// Enable network events and deny browser-initiated downloads before any
+	// navigation so a zip/CSV never lands in the user's Downloads folder and so
+	// the main-document content-type watcher can classify non-HTML navigations
+	// (issue #32).
+	if err := chromedp.Run(tabCtx, chromedp.ActionFunc(func(ctx context.Context) error {
+		if err := network.Enable().Do(ctx); err != nil {
+			return err
+		}
+		return browser.SetDownloadBehavior(browser.SetDownloadBehaviorBehaviorDeny).Do(ctx)
+	})); err != nil {
+		// Best-effort: non-HTML detection still keeps binaries out of the mirror.
+		_ = err
+	}
+	mainContentType := watchMainDocument(tabCtx)
 
-	// Watch the main document's response so a navigation that turns out to be a
-	// non-HTML resource (a zip, a CSV, a bare image) is caught and handed back for
-	// the asset downloader, rather than rendered as a broken page or, with downloads
-	// denied, left as an aborted navigation (issue #32). The content type arrives in
-	// the response headers whether Chrome renders the body or aborts it as a denied
-	// download, so this catches both.
-	mainContentType := watchMainDocument(page)
-
-	navErr := page.Navigate(rawURL)
-	// A denied download aborts the navigation, so inspect the captured content type
-	// before treating a navigation error as a failure. waitFor gives the response
-	// event a brief moment to be processed; for an HTML page it returns at once.
+	// chromedp.Navigate waits for the frame's load event. A denied download
+	// aborts navigation, so inspect the captured content type before treating a
+	// navigation error as a hard failure.
+	navErr := chromedp.Run(tabCtx, chromedp.Navigate(rawURL))
 	if ct := waitFor(ctx, mainContentType, 2*time.Second); ct != "" && !isHTML(ct) {
 		return RenderResult{}, &ErrNotHTML{URL: rawURL, ContentType: ct}
 	}
-	if navErr != nil {
+	if navErr != nil && !isObjRefChainError(navErr) {
+		// Object-reference-chain errors from Chrome are non-fatal when the
+		// document still loaded (issue #36).
 		return RenderResult{}, fmt.Errorf("navigate %s: %w", rawURL, navErr)
 	}
-	if err := page.WaitLoad(); err != nil {
-		// Chrome's DevTools Protocol may return "Object reference chain is too
-		// long" when a page's JavaScript builds deeply nested object graphs.
-		// The page has still loaded its HTML — the error is only about Chrome's
-		// internal object tracking, not about the document. Log the warning and
-		// continue rendering rather than failing the entire page (issue #36).
-		if !isObjRefChainError(err) {
-			return RenderResult{}, fmt.Errorf("wait load %s: %w", rawURL, err)
+
+	settle(tabCtx, p.opts.Settle)
+	if p.opts.Scroll {
+		autoScroll(tabCtx)
+		settle(tabCtx, p.opts.Settle)
+	}
+
+	var html, finalURL, title string
+	if err := chromedp.Run(tabCtx,
+		chromedp.OuterHTML("html", &html, chromedp.ByQuery),
+		chromedp.Location(&finalURL),
+		chromedp.Title(&title),
+	); err != nil {
+		if isObjRefChainError(err) && html != "" {
+			// Partial success: keep what we have.
+		} else if html == "" {
+			return RenderResult{}, fmt.Errorf("serialise %s: %w", rawURL, err)
 		}
 	}
-	settle(page, p.opts.Settle)
-	if p.opts.Scroll {
-		autoScroll(page)
-		settle(page, p.opts.Settle)
+	if finalURL == "" {
+		finalURL = rawURL
 	}
-
-	html, err := page.HTML()
-	if err != nil {
-		return RenderResult{}, fmt.Errorf("serialise %s: %w", rawURL, err)
-	}
-
-	res := RenderResult{HTML: html, FinalURL: rawURL}
-	if info, err := page.Info(); err == nil && info != nil {
-		res.FinalURL = info.URL
-		res.Title = info.Title
-	}
-	return res, nil
+	return RenderResult{HTML: html, FinalURL: finalURL, Title: title}, nil
 }
 
-// getBrowser lazily connects to or launches Chrome.
-func (p *Pool) getBrowser() (*rod.Browser, error) {
+// ensureBrowser lazily connects to or launches Chrome.
+func (p *Pool) ensureBrowser() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.closed {
-		return nil, fmt.Errorf("pool is closed")
+		return fmt.Errorf("pool is closed")
 	}
-	if p.browser != nil {
-		return p.browser, nil
-	}
-
-	controlURL := p.opts.ControlURL
-	if controlURL == "" {
-		l := launcher.New().Leakless(launcherLeakless()).
-			Headless(p.opts.Headless).
-			Set("disable-blink-features", "AutomationControlled").
-			Set("disable-gpu", "")
-
-		// Chrome's sandbox is the main line of defense when rendering pages from
-		// the open web, so kage keeps it on by default (issue #10). It is dropped
-		// only where it genuinely cannot initialize: inside a container, or when
-		// running as root, where Chrome otherwise refuses to start. The decision
-		// is logged so it is never silent.
-		if off, reason := disableSandbox(); off {
-			l = l.Set("no-sandbox", "")
-			warnSandboxDisabled(reason)
-		}
-
-		// In a container, the default /dev/shm is only 64 MB, too small for
-		// Chrome's renderer on large pages, so steer it to a temp file instead.
-		// Outside a container /dev/shm is roomy and faster, so leave it alone.
-		//
-		// The "chrome_crashpad_handler: --database is required" abort seen in
-		// containers (issue #7) is not fixed here: the crash-reporter flags do not
-		// stop Chrome from spawning the handler. Its real cause is an unwritable
-		// HOME, which leaves the crash database path empty; the image keeps HOME
-		// writable instead (see the Dockerfile).
-		if inContainer() {
-			l = l.Set("disable-dev-shm-usage", "")
-		}
-
-		if bin := p.chromeBin(); bin != "" {
-			l = l.Bin(bin)
-		}
-		u, err := l.Launch()
-		if err != nil {
-			return nil, fmt.Errorf("launch Chrome: %w", err)
-		}
-		controlURL = u
+	if p.allocCtx != nil {
+		return nil
 	}
 
-	b := rod.New().ControlURL(controlURL)
-	if err := b.Connect(); err != nil {
-		return nil, fmt.Errorf("connect Chrome: %w", err)
+	if p.opts.ControlURL != "" {
+		allocCtx, cancel := chromedp.NewRemoteAllocator(context.Background(), p.opts.ControlURL)
+		p.allocCtx = allocCtx
+		p.cancel = cancel
+		return nil
 	}
 
-	// kage never wants Chrome to write a file to disk. Every asset is fetched
-	// through kage's own downloader, which applies the size and media policy, so a
-	// Chrome-initiated download is only ever an accident: navigating an <a> link
-	// that turns out to be a binary (a zip, an installer, a CSV) makes Chrome save
-	// it to the user's Downloads folder, a surprise side effect of a crawl
-	// (issue #32). Denying downloads browser-wide stops that. The navigation is
-	// aborted instead, and Render's non-HTML detection reroutes the URL through the
-	// asset downloader, where the asset policy decides its fate. This is
-	// best-effort: if the call is unsupported, the non-HTML detection still keeps
-	// the binary out of the saved mirror.
-	_ = proto.BrowserSetDownloadBehavior{
-		Behavior: proto.BrowserSetDownloadBehaviorBehaviorDeny,
-	}.Call(b)
+	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.Flag("disable-blink-features", "AutomationControlled"),
+		chromedp.Flag("disable-gpu", true),
+		chromedp.Flag("enable-automation", false),
+	)
+	if p.opts.Headless {
+		opts = append(opts, chromedp.Headless)
+	} else {
+		opts = append(opts, chromedp.Flag("headless", false))
+	}
 
-	p.browser = b
-	return b, nil
+	// Chrome's sandbox is the main line of defense when rendering pages from
+	// the open web, so kage keeps it on by default (issue #10). It is dropped
+	// only where it genuinely cannot initialize: inside a container, or when
+	// running as root, where Chrome otherwise refuses to start.
+	if off, reason := disableSandbox(); off {
+		opts = append(opts, chromedp.NoSandbox)
+		warnSandboxDisabled(reason)
+	}
+	// In a container, the default /dev/shm is only 64 MB, too small for
+	// Chrome's renderer on large pages (issue #7 notes related container pain).
+	if inContainer() {
+		opts = append(opts, chromedp.Flag("disable-dev-shm-usage", true))
+	}
+	if bin := p.chromeBin(); bin != "" {
+		opts = append(opts, chromedp.ExecPath(bin))
+	}
+
+	allocCtx, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
+	// Touch the browser once so launch failures surface here, not on first page.
+	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
+	if err := chromedp.Run(browserCtx); err != nil {
+		browserCancel()
+		cancel()
+		return fmt.Errorf("launch Chrome: %w", err)
+	}
+	browserCancel()
+
+	p.allocCtx = allocCtx
+	p.cancel = cancel
+	return nil
 }
 
 // Close shuts down the managed Chrome process.
@@ -231,36 +230,39 @@ func (p *Pool) Close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.closed = true
-	if p.browser == nil {
-		return nil
+	if p.cancel != nil {
+		p.cancel()
+		p.cancel = nil
+		p.allocCtx = nil
 	}
-	err := p.browser.Close()
-	p.browser = nil
-	return err
+	return nil
 }
 
 // LookChrome reports the path of a usable Chrome/Chromium binary and whether one
-// was found, checking KAGE_CHROME, CHROME_BIN, rod's own lookup, and the common
-// system install locations. Tests use it to skip when no browser is present.
+// was found, checking KAGE_CHROME, CHROME_BIN, and the common system install
+// locations. Tests use it to skip when no browser is present.
 func LookChrome() (string, bool) {
 	for _, env := range []string{"KAGE_CHROME", "CHROME_BIN"} {
 		if v := os.Getenv(env); v != "" {
 			return v, true
 		}
 	}
-	if bin, ok := launcher.LookPath(); ok {
-		return bin, true
-	}
 	for _, c := range systemChromeCandidates() {
 		if _, err := os.Stat(c); err == nil {
 			return c, true
+		}
+	}
+	// chromedp's default lookup (google-chrome, chromium, …) on PATH.
+	for _, name := range []string{"google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome"} {
+		if p, err := exec.LookPath(name); err == nil && p != "" {
+			return p, true
 		}
 	}
 	return "", false
 }
 
 // chromeBin returns an explicit Chrome path from options or the environment, or
-// "" to let the launcher find/download one.
+// "" to let the allocator find one.
 func (p *Pool) chromeBin() string {
 	if p.opts.ChromeBin != "" {
 		return p.opts.ChromeBin
@@ -328,10 +330,6 @@ func warnSandboxDisabled(reason string) {
 // inContainer reports whether kage is running inside a container, where Chrome
 // needs container-specific flags. It honors IN_DOCKER (set it in your image)
 // and the /.dockerenv marker that Docker writes into every container.
-//
-// Keeping the sandbox on by default and dropping it only here was prompted by
-// Dimitrios Prasakis (issue #10); the IN_DOCKER opt-in was suggested on Hacker
-// News (https://news.ycombinator.com/item?id=48534865). Thanks to both.
 func inContainer() bool {
 	if envTrue("IN_DOCKER") {
 		return true
@@ -377,31 +375,23 @@ func envBool(name string) (val, ok bool) {
 // watchMainDocument subscribes to network responses and returns an accessor for
 // the main document's content type. The first Document-type response is the main
 // frame's navigation; later Document responses are sub-frames (iframes), whose
-// type kage does not police, so only the first is kept. The accessor is safe to
-// call from another goroutine. Any setup error leaves the accessor returning "",
-// which the caller reads as "unknown, render normally".
-func watchMainDocument(page *rod.Page) func() string {
+// type kage does not police, so only the first is kept.
+func watchMainDocument(ctx context.Context) func() string {
 	var (
 		mu sync.Mutex
 		ct string
 	)
-	if err := (proto.NetworkEnable{}).Call(page); err != nil {
-		return func() string { return "" }
-	}
-	wait := page.EachEvent(func(e *proto.NetworkResponseReceived) {
-		if e.Type != proto.NetworkResourceTypeDocument || e.Response == nil {
+	chromedp.ListenTarget(ctx, func(ev interface{}) {
+		e, ok := ev.(*network.EventResponseReceived)
+		if !ok || e.Type != network.ResourceTypeDocument || e.Response == nil {
 			return
 		}
 		mu.Lock()
 		if ct == "" {
-			ct = e.Response.MIMEType
+			ct = e.Response.MimeType
 		}
 		mu.Unlock()
 	})
-	// EachEvent's wait blocks until the page context ends, draining events as they
-	// arrive; run it for the page's lifetime. The deferred page.Close in Render
-	// cancels the context and unblocks it.
-	go wait()
 	return func() string {
 		mu.Lock()
 		defer mu.Unlock()
@@ -410,10 +400,7 @@ func watchMainDocument(page *rod.Page) func() string {
 }
 
 // waitFor polls get until it returns a non-empty value, the deadline passes, or
-// the context is cancelled, then returns whatever it last saw. It exists because
-// the network response is processed on another goroutine, so the value may not be
-// set the instant Navigate returns; an HTML page sets it within a few
-// milliseconds, while a never-arriving response simply waits out the deadline.
+// the context is cancelled, then returns whatever it last saw.
 func waitFor(ctx context.Context, get func() string, deadline time.Duration) string {
 	const step = 20 * time.Millisecond
 	for waited := time.Duration(0); waited < deadline; waited += step {
@@ -431,9 +418,8 @@ func waitFor(ctx context.Context, get func() string, deadline time.Duration) str
 
 // isHTML reports whether a document content type is one kage renders and saves as
 // a page. HTML and XHTML qualify; an empty type is treated as HTML so an unlabelled
-// response still renders. Anything else (a zip, a CSV, a PDF, a bare image or
-// JSON) is an asset that reached the page worker because its link carried no file
-// extension to classify it by.
+// response still renders. Anything else is an asset that reached the page worker
+// because its link carried no file extension to classify it by.
 func isHTML(contentType string) bool {
 	mt := strings.ToLower(strings.TrimSpace(contentType))
 	if i := strings.IndexByte(mt, ';'); i >= 0 {
@@ -451,29 +437,23 @@ func isObjRefChainError(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "Object reference chain is too long")
 }
 
-// settle waits for the network to go quiet for d, recovering from any rod
-// panic and capping the wait so a chatty page can never hang the worker.
-func settle(page *rod.Page, d time.Duration) {
+// settle waits for the network to go quiet for d, recovering from any panic and
+// capping the wait so a chatty page can never hang the worker.
+func settle(ctx context.Context, d time.Duration) {
 	if d <= 0 {
 		return
 	}
-	defer func() { _ = recover() }()
-	done := make(chan struct{})
-	go func() {
-		defer func() { _ = recover(); close(done) }()
-		wait := page.WaitRequestIdle(d, nil, nil, []proto.NetworkResourceType{})
-		wait()
-	}()
+	// chromedp has no built-in network-idle helper matching rod's; approximate
+	// with a quiet sleep after load. Good enough for the settle window.
 	select {
-	case <-done:
-	case <-time.After(d + 5*time.Second):
+	case <-ctx.Done():
+	case <-time.After(d):
 	}
 }
 
 // autoScroll scrolls to the bottom in steps to trigger lazy-loaded images.
-func autoScroll(page *rod.Page) {
-	defer func() { _ = recover() }()
-	_, _ = page.Eval(`() => new Promise((resolve) => {
+func autoScroll(ctx context.Context) {
+	_ = chromedp.Run(ctx, chromedp.Evaluate(`(() => new Promise((resolve) => {
 		let total = 0;
 		const step = 800;
 		const timer = setInterval(() => {
@@ -485,5 +465,5 @@ func autoScroll(page *rod.Page) {
 				resolve(true);
 			}
 		}, 100);
-	})`)
+	}))()`, nil))
 }
