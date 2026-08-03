@@ -107,6 +107,14 @@ jobs:
         run: |
           go mod tidy
           git diff --exit-code -- go.mod go.sum
+      # `go install module/package@version` rejects dependency-changing replace
+      # directives. Issue #72 shipped one accidentally while removing leakless.
+      - name: module supports versioned go install
+        run: |
+          if ! go mod edit -json | grep -q '"Replace": null'; then
+            echo "go.mod contains a replace directive; versioned go install will fail"
+            exit 1
+          fi
 
   # Compile the optional native-window viewer (-tags webview, cgo) so that path
   # keeps building. The default CI build is pure Go and never touches it. The
@@ -143,4 +151,15 @@ jobs:
         env:
           GOOS: windows
           CGO_ENABLED: "0"
-        run: go build -ldflags "-H=windowsgui" -o kage-windowsgui.exe ./cmd/kage
+        run: |
+          go build -ldflags "-H=windowsgui" -o kage-windowsgui.exe ./cmd/kage
+          go list -deps ./cmd/kage > windows-deps.txt
+          if grep -qx github.com/ysmood/leakless windows-deps.txt; then
+            echo "Windows build imports leakless; its embedded helper triggers Defender"
+            exit 1
+          fi
+          go tool nm kage-windowsgui.exe > windows-symbols.txt
+          if grep -q github.com/ysmood/leakless windows-symbols.txt; then
+            echo "Windows binary contains leakless symbols"
+            exit 1
+          fi
