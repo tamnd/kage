@@ -5,6 +5,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -60,7 +61,7 @@ func TestBuildAppDir(t *testing.T) {
 	if string(tr[:8]) != trailerMagic {
 		t.Error("AppRun missing the trailer")
 	}
-	if info, _ := os.Stat(apprun); info.Mode().Perm()&0o111 == 0 {
+	if info, _ := os.Stat(apprun); runtime.GOOS != "windows" && info.Mode().Perm()&0o111 == 0 {
 		t.Error("AppRun is not executable")
 	}
 
