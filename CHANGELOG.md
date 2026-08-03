@@ -19,6 +19,25 @@ All notable changes to kage are recorded here. The format follows
 
 - `CONTRIBUTING.md` with build, test, and pull-request expectations.
 
+## [0.3.11] - 2026-08-01
+
+### Fixed
+
+- `go install github.com/tamnd/kage/cmd/kage@latest` works again ([#72](https://github.com/tamnd/kage/issues/72)).
+  The v0.3.9 antivirus fix used a local `replace` directive to remove Rod's embedded leakless watchdog, but Go rejects versioned installation of any module whose dependencies are changed that way.
+  Windows now uses a small native Chrome launcher that never imports leakless, while other platforms retain Rod's launcher; this removes the `replace` directive without putting the antivirus-flagged helper back into `kage.exe`.
+
+### Security
+
+- Updated `golang.org/x/text` to v0.39.0 for [GO-2026-5970](https://pkg.go.dev/vuln/GO-2026-5970), an infinite loop on invalid input.
+  `kage clone` reached the affected normalization code through the progress renderer, so govulncheck reported it as callable rather than merely present.
+
+## [0.3.10] - 2026-07-11
+
+### Changed
+
+- Updated the Go toolchain requirement to 1.26.5.
+
 ## [0.3.9] - 2026-07-08
 
 ### Fixed
@@ -26,7 +45,7 @@ All notable changes to kage are recorded here. The format follows
 - The Windows build no longer embeds the leakless watchdog binary that Windows Defender flags as `Trojan:Win32/Kepavll!rfn`, which made a fresh `scoop install` fail with a virus warning on `leakless.exe` ([#68](https://github.com/tamnd/kage/issues/68)).
   go-rod's launcher imports [leakless](https://github.com/ysmood/leakless), which base64/gzip-embeds a prebuilt helper for every platform and links the Windows one into `kage.exe`.
   kage already launches Chrome with leakless disabled, so the helper never ran, only added the flagged bytes.
-  A `replace` directive now points the package at an API-compatible stub under `third_party/leakless` that carries no embedded binary, dropping about 1.28 MB from the Windows build.
+  This release initially used a `replace` directive pointing at an API-compatible stub under `third_party/leakless`; the follow-up fix for [#72](https://github.com/tamnd/kage/issues/72) moved Windows to a launcher that does not import leakless, because Go rejects versioned installs of modules containing `replace`.
 
 ## [0.3.6] - 2026-06-19
 

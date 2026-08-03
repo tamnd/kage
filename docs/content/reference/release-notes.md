@@ -10,11 +10,19 @@ The authoritative, commit-level history lives in [`CHANGELOG.md`](https://github
 
 - **Crawl controls match their documentation.** `--exclude` is a real path prefix, the unused `--traversal` flag is gone, and `--max-pages` clearly counts failed render attempts.
 
+## v0.3.11
+
+- **`go install ...@latest` works again.** The v0.3.9 antivirus fix replaced Rod's leakless dependency with a local stub. That kept the flagged helper out of `kage.exe`, but Go refuses versioned installation of a module containing a dependency-changing `replace` directive ([#72](https://github.com/tamnd/kage/issues/72)). Windows now launches Chrome through a small platform-specific launcher that never imports leakless. Other platforms keep Rod's launcher, the Windows binary remains free of the flagged helper, and the module no longer needs `replace`.
+
+## v0.3.10
+
+- **Go 1.26.5.** The release updates kage's Go toolchain requirement to the latest patch release.
+
 ## v0.3.9
 
 A fix for the antivirus warning some Windows users hit when installing kage.
 
-- **The Windows build no longer ships the leakless helper antivirus flags.** kage renders pages with [go-rod](https://github.com/go-rod/rod), whose launcher pulls in [leakless](https://github.com/ysmood/leakless), a small watchdog that force-kills Chrome if kage exits. leakless carries a prebuilt helper binary for every platform and links the Windows one straight into `kage.exe`. Windows Defender recognises that helper as `Trojan:Win32/Kepavll!rfn` and quarantines it, so a fresh `scoop install` failed with a virus warning on `leakless.exe` ([#68](https://github.com/tamnd/kage/issues/68)). kage already launches Chrome with leakless switched off, so the helper never ran anyway. It is now replaced with a stub that carries no embedded binary, which drops about 1.28 MB from the Windows build and clears the warning. Thanks to John Pywtorak for the report. `go install`, unaffected before, stays clean.
+- **The Windows build no longer ships the leakless helper antivirus flags.** kage renders pages with [go-rod](https://github.com/go-rod/rod), whose launcher pulls in [leakless](https://github.com/ysmood/leakless), a small watchdog that force-kills Chrome if kage exits. leakless carries a prebuilt helper binary for every platform and links the Windows one straight into `kage.exe`. Windows Defender recognises that helper as `Trojan:Win32/Kepavll!rfn` and quarantines it, so a fresh `scoop install` failed with a virus warning on `leakless.exe` ([#68](https://github.com/tamnd/kage/issues/68)). kage already launches Chrome with leakless switched off, so the helper never ran anyway. v0.3.9 replaced it with a stub that carries no embedded binary, which dropped about 1.28 MB from the Windows build and cleared the warning. Thanks to John Pywtorak for the report. The local replacement also broke versioned `go install`; the next release corrects that regression without restoring the helper ([#72](https://github.com/tamnd/kage/issues/72)).
 
 ## v0.3.4
 
