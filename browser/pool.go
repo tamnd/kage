@@ -14,10 +14,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-rod/rod"
-	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/proto"
-	"github.com/go-rod/stealth"
+	"github.com/tamnd/kage/internal/rod"
+	"github.com/tamnd/kage/internal/stealth"
 )
 
 // Options configure a Pool.
@@ -165,7 +164,7 @@ func (p *Pool) getBrowser() (*rod.Browser, error) {
 
 	controlURL := p.opts.ControlURL
 	if controlURL == "" {
-		l := launcher.New().Leakless(launcherLeakless()).
+		l := newChromeLauncher().Leakless(launcherLeakless()).
 			Headless(p.opts.Headless).
 			Set("disable-blink-features", "AutomationControlled").
 			Set("disable-gpu", "")
@@ -248,7 +247,7 @@ func LookChrome() (string, bool) {
 			return v, true
 		}
 	}
-	if bin, ok := launcher.LookPath(); ok {
+	if bin, ok := launcherLookPath(); ok {
 		return bin, true
 	}
 	for _, c := range systemChromeCandidates() {
@@ -269,6 +268,9 @@ func (p *Pool) chromeBin() string {
 		if v := os.Getenv(env); v != "" {
 			return v
 		}
+	}
+	if bin, ok := launcherLookPath(); ok {
+		return bin
 	}
 	for _, c := range systemChromeCandidates() {
 		if _, err := os.Stat(c); err == nil {
