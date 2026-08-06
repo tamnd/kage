@@ -143,7 +143,7 @@ func (p *Pool) Render(ctx context.Context, rawURL string) (RenderResult, error) 
 	}
 	settle(page, p.opts.Settle)
 	if p.opts.Scroll {
-		autoScroll(page)
+		autoScroll(page, scrollBudget(p.opts.RenderTimeout))
 		settle(page, p.opts.Settle)
 	}
 
@@ -577,20 +577,100 @@ func settle(page *rod.Page, d time.Duration) {
 	}
 }
 
-// autoScroll scrolls to the bottom in steps to trigger lazy-loaded images.
-func autoScroll(page *rod.Page) {
+// autoScrollJS scrolls a page to the bottom in steps so lazy-loaded content
+// mounts before the DOM is serialised, then returns to the top.
+//
+// It scrolls whichever element actually scrolls rather than the window. An app
+// shell keeps a fixed-height <body> with overflow hidden and puts the document
+// in an inner container with overflow-y:auto, so window.scrollBy moves nothing
+// at all and nothing ever lazy-loads. Feishu, Notion, Linear, Google Docs and
+// most admin dashboards are built this way (issue #61).
+//
+// Progress is measured by reading scrollTop back rather than by summing the
+// deltas asked for. The old code compared its running total against
+// document.body.scrollHeight, which in an app shell is the viewport height, so
+// the very first 800px step cleared the bound and the loop resolved after one
+// tick. Summing deltas is wrong on ordinary pages too: once the page is at its
+// bottom scrollBy stops moving but the total keeps climbing, so a short page
+// exits early and an infinite feed exits at a fixed distance no matter what
+// loaded.
+//
+// A tick counts as progress if the scroller moved or the document grew under
+// it, the second being what an infinite feed does. Stopping only after several
+// ticks with neither is also what gives content fetched on intersection time to
+// arrive, since the request often has not started when the scroll reaches the
+// bottom.
+const autoScrollJS = `(budgetMs) => new Promise((resolve) => {
+	const scrollable = (el) => {
+		const s = getComputedStyle(el);
+		return (s.overflowY === "auto" || s.overflowY === "scroll" || s.overflowY === "overlay");
+	};
+	// Start from the document scroller, which scrolls whatever its computed
+	// overflow says, then take any inner container with more to scroll.
+	let target = document.scrollingElement || document.documentElement;
+	let range = target ? target.scrollHeight - target.clientHeight : 0;
+	for (const el of document.querySelectorAll("*")) {
+		const r = el.scrollHeight - el.clientHeight;
+		if (r > range && scrollable(el)) {
+			target = el;
+			range = r;
+		}
+	}
+	if (!target) {
+		resolve("no scroller");
+		return;
+	}
+
+	const tick = 150;
+	const step = Math.max(200, Math.round(target.clientHeight * 0.8));
+	const stallLimit = 10;
+	const deadline = Date.now() + budgetMs;
+	let stalls = 0, lastTop = -1, lastHeight = -1, steps = 0;
+
+	const timer = setInterval(() => {
+		const top = target.scrollTop, height = target.scrollHeight;
+		if (top === lastTop && height === lastHeight) {
+			stalls++;
+		} else {
+			stalls = 0;
+		}
+		lastTop = top;
+		lastHeight = height;
+		if (stalls >= stallLimit || Date.now() >= deadline) {
+			clearInterval(timer);
+			// Back to the top. On a virtualised document the bottom blocks unmount
+			// as the top remounts, so this at least captures the beginning rather
+			// than the end.
+			target.scrollTop = 0;
+			resolve(steps + " steps");
+			return;
+		}
+		target.scrollTop = top + step;
+		steps++;
+	}, tick);
+})`
+
+// autoScroll drives the page to the bottom and back, within budget. A budget is
+// enforced inside the page because the render timeout applies to the whole page
+// handle: a scroll that ran until the timeout would take page.HTML() down with
+// it and fail a render that used to succeed.
+func autoScroll(page *rod.Page, budget time.Duration) {
 	defer func() { _ = recover() }()
-	_, _ = page.Eval(`() => new Promise((resolve) => {
-		let total = 0;
-		const step = 800;
-		const timer = setInterval(() => {
-			window.scrollBy(0, step);
-			total += step;
-			if (total >= document.body.scrollHeight) {
-				clearInterval(timer);
-				window.scrollTo(0, 0);
-				resolve(true);
-			}
-		}, 100);
-	})`)
+	if budget <= 0 {
+		return
+	}
+	_, _ = page.Eval(autoScrollJS, budget.Milliseconds())
+}
+
+// scrollBudget is how long autoScroll may spend, leaving the rest of the render
+// timeout for the settle and the serialisation that follow it.
+func scrollBudget(renderTimeout time.Duration) time.Duration {
+	const floor = 5 * time.Second
+	if renderTimeout <= 0 {
+		return floor
+	}
+	if half := renderTimeout / 2; half > floor {
+		return half
+	}
+	return min(floor, renderTimeout)
 }

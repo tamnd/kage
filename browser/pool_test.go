@@ -345,3 +345,141 @@ func TestRenderPreservesDoctype(t *testing.T) {
 		}
 	}
 }
+
+func TestScrollBudget(t *testing.T) {
+	cases := []struct {
+		in, want time.Duration
+	}{
+		{0, 5 * time.Second},                 // unset: the floor
+		{30 * time.Second, 15 * time.Second}, // the default render timeout
+		{2 * time.Minute, time.Minute},       // a patient run scrolls longer
+		{8 * time.Second, 5 * time.Second},   // half is under the floor
+		{3 * time.Second, 3 * time.Second},   // never more than the whole timeout
+	}
+	for _, c := range cases {
+		if got := scrollBudget(c.in); got != c.want {
+			t.Errorf("scrollBudget(%s) = %s, want %s", c.in, got, c.want)
+		}
+	}
+}
+
+// appShell is the layout behind issue #61: a fixed-height body with overflow
+// hidden, and the document itself inside an inner container with
+// overflow-y:auto. window.scrollBy moves nothing on a page like this, and
+// document.body.scrollHeight is the viewport height, so the old autoScroll both
+// scrolled the wrong thing and decided it was finished after one step. Feishu,
+// Notion, Linear and most dashboards are built this way.
+const appShell = `<!doctype html><html><head><style>
+html,body{height:100%;margin:0;overflow:hidden}
+#shell{height:100%;overflow-y:auto}
+#filler{height:6000px}
+</style></head><body>
+<div id="shell"><div id="content"><p>first screen</p></div><div id="filler"></div></div>
+<script>
+const shell = document.getElementById("shell");
+shell.addEventListener("scroll", () => {
+  if (shell.scrollTop > 1500 && !document.getElementById("lazy")) {
+    const p = document.createElement("p");
+    p.id = "lazy";
+    p.textContent = ["lazy", "loaded", "marker"].join("-");
+    document.getElementById("content").appendChild(p);
+  }
+});
+</script></body></html>`
+
+// windowScroll is the ordinary case, a tall page the window scrolls, kept as a
+// guard that finding the inner scroller did not break it.
+const windowScroll = `<!doctype html><html><head><style>#filler{height:6000px}</style></head>
+<body><div id="content"><p>first screen</p></div><div id="filler"></div>
+<script>
+window.addEventListener("scroll", () => {
+  if (window.scrollY > 1500 && !document.getElementById("lazy")) {
+    const p = document.createElement("p");
+    p.id = "lazy";
+    p.textContent = ["lazy", "loaded", "marker"].join("-");
+    document.getElementById("content").appendChild(p);
+  }
+});
+</script></body></html>`
+
+func TestAutoScrollTriggersLazyContent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("scroll test drives Chrome; skipped under -short")
+	}
+	if _, ok := LookChrome(); !ok {
+		t.Skip("no Chrome/Chromium found; skipping scroll test")
+	}
+
+	pages := map[string]string{"/app-shell": appShell, "/window": windowScroll}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, ok := pages[r.URL.Path]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	p := New(Options{
+		Headless: true, Workers: 1, Scroll: true,
+		Settle: 300 * time.Millisecond, RenderTimeout: 40 * time.Second,
+	})
+	defer func() { _ = p.Close() }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	for _, path := range []string{"/app-shell", "/window"} {
+		res, err := p.Render(ctx, srv.URL+path)
+		if err != nil {
+			t.Errorf("render %s: %v", path, err)
+			continue
+		}
+		if !strings.Contains(res.HTML, "lazy-loaded-marker") {
+			t.Errorf("%s: --scroll did not trigger the lazy content:\n%s", path, res.HTML)
+		}
+		if !strings.Contains(res.HTML, "first screen") {
+			t.Errorf("%s: the content that was there before the scroll is gone:\n%s", path, res.HTML)
+		}
+	}
+}
+
+func TestAutoScrollLeavesAStaticPageAlone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("scroll test drives Chrome; skipped under -short")
+	}
+	if _, ok := LookChrome(); !ok {
+		t.Skip("no Chrome/Chromium found; skipping scroll test")
+	}
+
+	// Nothing to scroll: the loop must notice at once rather than spin out its
+	// whole budget.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(`<!doctype html><html><body><p>short page</p></body></html>`))
+	}))
+	defer srv.Close()
+
+	p := New(Options{
+		Headless: true, Workers: 1, Scroll: true,
+		Settle: 200 * time.Millisecond, RenderTimeout: 40 * time.Second,
+	})
+	defer func() { _ = p.Close() }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	res, err := p.Render(ctx, srv.URL)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	if !strings.Contains(res.HTML, "short page") {
+		t.Errorf("content missing:\n%s", res.HTML)
+	}
+	if elapsed := time.Since(start); elapsed > 15*time.Second {
+		t.Errorf("scrolling a page with nothing to scroll took %s", elapsed)
+	}
+}

@@ -71,3 +71,11 @@ kage clone example.com --scroll
 
 This makes each render a little slower but captures media that only loads on
 view.
+
+kage scrolls whichever element on the page actually scrolls, not just the
+window, so this works on app-shell sites where the body is fixed to the viewport
+and the document lives inside an inner container. It keeps stepping until both
+the scroll position and the page height stop changing, which is what an infinite
+feed needs, and gives up after half the render timeout so a page that appends
+content forever cannot stall the crawl. Raise `--render-timeout` if a long feed
+is being cut short.

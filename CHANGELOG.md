@@ -21,6 +21,12 @@ All notable changes to kage are recorded here. The format follows
 - `--max-pages` no longer discards the pages it held back.
   They stay in the frontier, so `kage clone example.com -p 20` to inspect a site and then `kage clone example.com` to finish it now works as a workflow.
 
+- `--scroll` scrolls the element that actually scrolls, so lazy-loaded content appears on app-shell pages ([#61](https://github.com/tamnd/kage/issues/61)).
+  It called `window.scrollBy`, which moves nothing on a site whose body is fixed to the viewport height with the document inside an inner container, and that is how Feishu, Notion, Linear and most dashboards are built.
+  The loop also stopped as soon as the distance travelled reached `document.body.scrollHeight`, which on those pages is one viewport, so it gave up after a single step even where the window did scroll.
+  kage now picks the largest genuinely scrollable element on the page, reads `scrollTop` back after each step instead of assuming the step landed, and keeps going until the position and the height both stop changing, which is what infinite scroll needs.
+  The scroll is bounded by half the render timeout, at least five seconds, so a page that appends content forever cannot hold a worker indefinitely.
+
 - Saved pages keep their `<!DOCTYPE html>` instead of rendering in quirks mode ([#16](https://github.com/tamnd/kage/issues/16)).
   kage serialises a rendered page as the outerHTML of `<html>`, and a doctype is a sibling of `<html>` rather than a child, so it was never in that string and every page kage has ever written came out without one.
   A document with no doctype is quirks mode in every browser: the box model reverts to the pre-CSS2 IE one and `line-height`, table cell inheritance and `vertical-align` all change, so the saved copy laid out differently from the original, and the `<meta charset>` declaration lost its authority, leaving a reader free to fall back to its locale encoding and mojibake every multibyte character.
