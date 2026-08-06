@@ -6,6 +6,16 @@ All notable changes to kage are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Saved pages keep their `<!DOCTYPE html>` instead of rendering in quirks mode ([#16](https://github.com/tamnd/kage/issues/16)).
+  kage serialises a rendered page as the outerHTML of `<html>`, and a doctype is a sibling of `<html>` rather than a child, so it was never in that string and every page kage has ever written came out without one.
+  A document with no doctype is quirks mode in every browser: the box model reverts to the pre-CSS2 IE one and `line-height`, table cell inheritance and `vertical-align` all change, so the saved copy laid out differently from the original, and the `<meta charset>` declaration lost its authority, leaving a reader free to fall back to its locale encoding and mojibake every multibyte character.
+  That is the encoding problem reported in #16, and a webview or e-reader with no encoding menu has no way back from it.
+  The doctype is now read from the DOM and reproduced exactly rather than replaced with `<!DOCTYPE html>`, because the string itself selects the rendering mode: HTML 4.01 Transitional is standards mode with its system identifier and quirks mode without it.
+  A page that genuinely had no doctype on the live web still gets none, so it keeps rendering the way its author saw it.
+- The `cloned by kage` banner comment is written after the doctype rather than before it, so the doctype stays the first thing in the file.
+
 ## [0.3.11] - 2026-08-01
 
 ### Fixed

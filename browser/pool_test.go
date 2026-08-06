@@ -247,3 +247,101 @@ func TestRenderRoutesNonHTML(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderDoctype(t *testing.T) {
+	cases := []struct {
+		name, doctype, public, system, want string
+	}{
+		{"html5", "html", "", "", "<!DOCTYPE html>"},
+		{
+			"html401 transitional", "html",
+			"-//W3C//DTD HTML 4.01 Transitional//EN",
+			"http://www.w3.org/TR/html4/loose.dtd",
+			`<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">`,
+		},
+		{
+			// No system identifier: the difference between standards mode and
+			// quirks mode for this doctype, so it has to survive verbatim.
+			"html401 no system", "html",
+			"-//W3C//DTD HTML 4.01//EN", "",
+			`<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN">`,
+		},
+		{
+			"xhtml", "html",
+			"-//W3C//DTD XHTML 1.0 Strict//EN",
+			"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd",
+			`<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">`,
+		},
+		{"legacy compat", "html", "", "about:legacy-compat", `<!DOCTYPE html SYSTEM "about:legacy-compat">`},
+
+		// A page can patch its own DOM, and whatever comes back is written to the
+		// top of a file we save, so anything that could close the token early or
+		// carry markup is dropped rather than escaped.
+		{"no name", "", "", "", ""},
+		{"name with markup", "html><script>alert(1)</script", "", "", ""},
+		{"quote in public id", "html", `x" "y><script>alert(1)</script`, "", ""},
+		{"angle bracket in system id", "html", "", "x><script>alert(1)</script", ""},
+		{"newline in public id", "html", "a\nb", "", ""},
+	}
+	for _, c := range cases {
+		if got := renderDoctype(c.doctype, c.public, c.system); got != c.want {
+			t.Errorf("%s: renderDoctype(%q, %q, %q) = %q, want %q",
+				c.name, c.doctype, c.public, c.system, got, c.want)
+		}
+	}
+}
+
+func TestRenderPreservesDoctype(t *testing.T) {
+	if testing.Short() {
+		t.Skip("render test drives Chrome; skipped under -short")
+	}
+	if _, ok := LookChrome(); !ok {
+		t.Skip("no Chrome/Chromium found; skipping render test")
+	}
+
+	pages := map[string]string{
+		"/html5":  `<!DOCTYPE html><html><body><p>modern</p></body></html>`,
+		"/legacy": `<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd"><html><body><p>legacy</p></body></html>`,
+		"/quirks": `<html><body><p>quirks</p></body></html>`,
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, ok := pages[r.URL.Path]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	p := New(Options{Headless: true, Workers: 1, Settle: 300 * time.Millisecond, RenderTimeout: 20 * time.Second})
+	defer func() { _ = p.Close() }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	cases := []struct{ path, want string }{
+		{"/html5", "<!DOCTYPE html>"},
+		{"/legacy", `<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">`},
+		// A page that was quirks mode on the live web stays quirks mode offline,
+		// so it keeps laying out the way its author saw it.
+		{"/quirks", ""},
+	}
+	for _, c := range cases {
+		res, err := p.Render(ctx, srv.URL+c.path)
+		if err != nil {
+			t.Errorf("render %s: %v", c.path, err)
+			continue
+		}
+		if c.want == "" {
+			if strings.Contains(strings.ToUpper(res.HTML), "<!DOCTYPE") {
+				t.Errorf("%s: got a doctype for a page that had none:\n%s", c.path, res.HTML)
+			}
+			continue
+		}
+		if !strings.HasPrefix(res.HTML, c.want) {
+			t.Errorf("%s: render should start with %s, got:\n%s", c.path, c.want, res.HTML)
+		}
+	}
+}

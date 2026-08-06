@@ -7,6 +7,7 @@ package browser
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"runtime"
@@ -17,6 +18,7 @@ import (
 	"github.com/go-rod/rod/lib/proto"
 	"github.com/tamnd/kage/internal/rod"
 	"github.com/tamnd/kage/internal/stealth"
+	"golang.org/x/net/html"
 )
 
 // Options configure a Pool.
@@ -145,17 +147,113 @@ func (p *Pool) Render(ctx context.Context, rawURL string) (RenderResult, error) 
 		settle(page, p.opts.Settle)
 	}
 
-	html, err := page.HTML()
+	doc, err := page.HTML()
 	if err != nil {
 		return RenderResult{}, fmt.Errorf("serialise %s: %w", rawURL, err)
 	}
+	// page.HTML() is the outerHTML of <html>, which cannot contain the doctype,
+	// so put it back (issue #16).
+	if dt := pageDoctype(page); dt != "" {
+		doc = dt + "\n" + doc
+	}
 
-	res := RenderResult{HTML: html, FinalURL: rawURL}
+	res := RenderResult{HTML: doc, FinalURL: rawURL}
 	if info, err := page.Info(); err == nil && info != nil {
 		res.FinalURL = info.URL
 		res.Title = info.Title
 	}
 	return res, nil
+}
+
+// doctypeJS reads the parts of document.doctype. It returns them as a JSON
+// array rather than a ready-made string so the source form is assembled in Go,
+// where a hostile page cannot influence it.
+const doctypeJS = `() => {
+	const d = document.doctype;
+	return d ? JSON.stringify([d.name, d.publicId, d.systemId]) : "";
+}`
+
+// pageDoctype returns the document's doctype in source form, or "" when the
+// page has none or Chrome will not say.
+//
+// Chrome's serialisation of a page is the outerHTML of <html>, and a doctype is
+// a sibling of <html> rather than a child, so it is never in that string. Left
+// alone, every page kage saves comes out with no doctype and every browser
+// renders it in quirks mode: the box model reverts to the pre-CSS2 IE one, so
+// the saved copy lays out differently from the original, and the <meta charset>
+// declaration loses its authority, so a reader is free to fall back to its
+// locale encoding and mojibake the text. A reader with no encoding menu, a
+// webview or an e-reader, has no way back from that (issue #16).
+//
+// The doctype is reproduced exactly rather than replaced with <!DOCTYPE html>,
+// because the string itself selects the rendering mode: HTML 4.01 Transitional
+// is standards mode with its system identifier and quirks mode without it. A
+// page that was genuinely quirks mode on the live web keeps no doctype and so
+// keeps rendering the way its author saw it.
+func pageDoctype(page *rod.Page) string {
+	obj, err := page.Eval(doctypeJS)
+	if err != nil || obj == nil {
+		return ""
+	}
+	var parts []string
+	if err := json.Unmarshal([]byte(obj.Value.Str()), &parts); err != nil || len(parts) != 3 {
+		return ""
+	}
+	return renderDoctype(parts[0], parts[1], parts[2])
+}
+
+// renderDoctype rebuilds the source form of a doctype from its DOM parts with
+// the same renderer that writes the saved page, so the two always agree.
+//
+// The parts arrive from an untrusted page and land at the very top of a file we
+// write, so anything that does not look like a doctype a parser produced is
+// dropped rather than escaped. x/net/html quotes the identifiers but does not
+// escape a quote inside one, and it writes the name verbatim.
+func renderDoctype(name, publicID, systemID string) string {
+	if !validDoctypeName(name) || !validDoctypeID(publicID) || !validDoctypeID(systemID) {
+		return ""
+	}
+	n := &html.Node{Type: html.DoctypeNode, Data: name}
+	if publicID != "" {
+		n.Attr = append(n.Attr, html.Attribute{Key: "public", Val: publicID})
+	}
+	if systemID != "" {
+		n.Attr = append(n.Attr, html.Attribute{Key: "system", Val: systemID})
+	}
+	var b strings.Builder
+	if err := html.Render(&b, n); err != nil {
+		return ""
+	}
+	return b.String()
+}
+
+// validDoctypeName accepts the name of a doctype: ASCII letters only. In
+// practice it is always "html", but "math" and "svg" are legal too.
+func validDoctypeName(name string) bool {
+	if name == "" || len(name) > 32 {
+		return false
+	}
+	for _, r := range name {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') {
+			return false
+		}
+	}
+	return true
+}
+
+// validDoctypeID accepts a public or system identifier: printable ASCII with no
+// quote or angle bracket, which is every identifier any real doctype uses and
+// nothing that could close the token early.
+func validDoctypeID(id string) bool {
+	if len(id) > 256 {
+		return false
+	}
+	for _, r := range id {
+		if r < 0x20 || r > 0x7e || r == '"' || r == '\'' || r == '<' || r == '>' {
+			return false
+		}
+	}
+	return true
 }
 
 // getBrowser lazily connects to or launches Chrome.

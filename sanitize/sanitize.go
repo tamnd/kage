@@ -380,11 +380,19 @@ func injectMobileCSS(root *html.Node) {
 	head.AppendChild(style)
 }
 
-// insertBanner prepends an HTML comment to the document.
+// insertBanner prepends an HTML comment to the document, after the doctype so
+// the doctype stays the first thing in the file. A comment ahead of it is legal
+// and modern browsers still read the doctype that follows, but older ones and
+// several offline readers take anything before it as a reason to drop into
+// quirks mode, which is the whole thing the doctype is there to prevent.
 func insertBanner(root *html.Node, text string) {
 	c := &html.Node{Type: html.CommentNode, Data: " " + text + " "}
-	if root.FirstChild != nil {
-		root.InsertBefore(c, root.FirstChild)
+	at := root.FirstChild
+	if at != nil && at.Type == html.DoctypeNode {
+		at = at.NextSibling
+	}
+	if at != nil {
+		root.InsertBefore(c, at)
 	} else {
 		root.AppendChild(c)
 	}

@@ -284,3 +284,50 @@ func TestCharsetNotDuplicated(t *testing.T) {
 		}
 	}
 }
+
+func TestDoctypePreservedAndBannerFollowsIt(t *testing.T) {
+	// The browser hands the doctype back with the page, and everything sanitize
+	// does has to leave it at the top of the file. A doctype anywhere but first
+	// is what puts a saved page into quirks mode (issue #16).
+	cases := []struct {
+		name, in, want string
+	}{
+		{"html5", `<!doctype html><html><head></head><body><p>x</p></body></html>`, "<!DOCTYPE html>"},
+		{
+			"html401 transitional",
+			`<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">` +
+				`<html><head></head><body><p>x</p></body></html>`,
+			`<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">`,
+		},
+	}
+	for _, c := range cases {
+		out, _, err := Strip([]byte(c.in), Options{Banner: "cloned by kage"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := string(out)
+		if !strings.HasPrefix(s, c.want) {
+			t.Errorf("%s: output should start with %s, got:\n%s", c.name, c.want, s)
+		}
+		if !strings.Contains(s, "<!-- cloned by kage -->") {
+			t.Errorf("%s: banner missing:\n%s", c.name, s)
+		}
+		if bannerIdx, dtIdx := strings.Index(s, "<!--"), strings.Index(s, "<!DOCTYPE"); bannerIdx < dtIdx {
+			t.Errorf("%s: banner must follow the doctype (banner=%d doctype=%d):\n%s", c.name, bannerIdx, dtIdx, s)
+		}
+	}
+}
+
+func TestNoDoctypeInvented(t *testing.T) {
+	// A page that carried no doctype was quirks mode on the live web. Adding one
+	// would switch it to standards mode and change its layout, so sanitize leaves
+	// that decision to the source.
+	in := `<html><head></head><body><p>x</p></body></html>`
+	out, _, err := Strip([]byte(in), Options{Banner: "cloned by kage"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := string(out); strings.Contains(strings.ToUpper(s), "<!DOCTYPE") {
+		t.Errorf("sanitize invented a doctype:\n%s", s)
+	}
+}
