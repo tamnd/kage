@@ -8,6 +8,19 @@ All notable changes to kage are recorded here. The format follows
 
 ### Fixed
 
+- `--resume` picks an interrupted crawl back up instead of doing nothing ([#36](https://github.com/tamnd/kage/issues/36)).
+  `state.json` persisted only the visited set, and the frontier was rebuilt purely by re-rendering pages and following their links, which resume exists to avoid.
+  So a resumed run found its seed already visited, `enqueuePage` turned it down, nothing was queued, and the run printed `pages 0` and exited successfully with most of the site still missing.
+  Only sites with a `sitemap.xml` appeared to work, because those URLs are seeded independently on every run.
+  The unfinished frontier is now saved alongside the visited set, with each page's depth so `--max-depth` keeps its meaning across a restart, and re-queued at startup.
+  A run now also reports what it is leaving behind: `resume: 412 pages still to do, rerun to continue`.
+- A page that failed is retried by the next run instead of being lost.
+  Failures were never recorded anywhere, so the only way to pick them up was `--refresh`, which re-renders the entire site.
+  This is the "memory of what failed" asked for in [#36](https://github.com/tamnd/kage/issues/36).
+  A page `robots.txt` disallows is not carried over, since a later run would only fetch `robots.txt` and skip it again.
+- `--max-pages` no longer discards the pages it held back.
+  They stay in the frontier, so `kage clone example.com -p 20` to inspect a site and then `kage clone example.com` to finish it now works as a workflow.
+
 - Saved pages keep their `<!DOCTYPE html>` instead of rendering in quirks mode ([#16](https://github.com/tamnd/kage/issues/16)).
   kage serialises a rendered page as the outerHTML of `<html>`, and a doctype is a sibling of `<html>` rather than a child, so it was never in that string and every page kage has ever written came out without one.
   A document with no doctype is quirks mode in every browser: the box model reverts to the pre-CSS2 IE one and `line-height`, table cell inheritance and `vertical-align` all change, so the saved copy laid out differently from the original, and the `<meta charset>` declaration lost its authority, leaving a reader free to fall back to its locale encoding and mojibake every multibyte character.
