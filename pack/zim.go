@@ -198,8 +198,9 @@ func buildWriter(mirrorDir string, opts ZIMOptions) (*zim.Writer, *clusterCache,
 	// listing. A ZIM has no such listing, so synthesise an index that links
 	// every HTML page and use it as the main page (issue #62).
 	if main != "index.html" && len(htmlPages) > 1 {
-		listing := syntheticIndexHTML(htmlPages, pageTitles, firstNonEmpty(opts.Title, filepath.Base(mirrorDir)))
-		w.AddContent(zim.NamespaceContent, "index.html", firstNonEmpty(opts.Title, filepath.Base(mirrorDir)), "text/html", listing)
+		indexTitle := firstNonEmpty(opts.Title, filepath.Base(mirrorDir))
+		listing := syntheticIndexHTML(htmlPages, pageTitles, indexTitle)
+		w.AddContent(zim.NamespaceContent, "index.html", indexTitle, "text/html", listing)
 		counts["text/html"]++
 		main = "index.html"
 	}
