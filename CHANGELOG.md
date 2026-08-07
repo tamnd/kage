@@ -10,6 +10,8 @@ All notable changes to kage are recorded here. The format follows
 
 - `CONTRIBUTING.md` documents the development setup, test commands, and
   expectations for focused pull requests.
+- A `robots.txt` reference explains the `kage` agent token, `Crawl-delay`, and
+  the advisory `--no-robots` override ([#8](https://github.com/tamnd/kage/issues/8)).
 
 ### Fixed
 
