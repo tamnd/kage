@@ -10,8 +10,9 @@ All notable changes to kage are recorded here. The format follows
 
 - Relative links on redirected pages resolve against the browser's final URL
   and the document's first `<base href>`, while the page remains saved under
-  the URL that was originally discovered. The consumed `<base>` element is
-  removed so it cannot re-root rewritten links when the saved page opens.
+  the URL that was originally discovered. Consumed `href` attributes are
+  removed from every `<base>` so they cannot re-root rewritten links when the
+  saved page opens, while `target` behavior is preserved.
   After a cross-host redirect,
   relative references resolve to the other host and remain absolute when that
   host is outside the crawl scope, so those resources are not localised.

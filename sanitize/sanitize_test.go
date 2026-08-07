@@ -167,17 +167,40 @@ func TestKeepMetaRefreshPlain(t *testing.T) {
 	}
 }
 
-func TestBaseElementRemovedAfterRewrite(t *testing.T) {
-	in := `<html><head><base href="https://example.com/live/"></head><body><a href="saved.html">saved</a></body></html>`
-	out, rep, err := Strip([]byte(in), Options{})
-	if err != nil {
-		t.Fatal(err)
+func TestBaseHrefRemovedAfterRewrite(t *testing.T) {
+	cases := []struct {
+		name        string
+		bases       string
+		wantBase    bool
+		wantTarget  bool
+		wantRemoved int
+	}{
+		{name: "href only", bases: `<base href="https://example.com/live/">`, wantRemoved: 1},
+		{name: "target only", bases: `<base target="_blank">`, wantBase: true, wantTarget: true},
+		{name: "href and target", bases: `<base href="https://example.com/live/" target="_blank">`, wantBase: true, wantTarget: true, wantRemoved: 1},
+		{name: "all hrefs", bases: `<base href="https://example.com/one/"><base href="https://example.com/two/" target="_blank">`, wantBase: true, wantTarget: true, wantRemoved: 2},
 	}
-	if strings.Contains(strings.ToLower(string(out)), "<base") {
-		t.Errorf("base element survived:\n%s", out)
-	}
-	if rep.BaseTagsRemoved != 1 {
-		t.Errorf("BaseTagsRemoved = %d, want 1", rep.BaseTagsRemoved)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			in := `<html><head>` + tc.bases + `</head><body><a href="saved.html">saved</a></body></html>`
+			out, rep, err := Strip([]byte(in), Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			s := strings.ToLower(string(out))
+			if got := strings.Contains(s, "<base"); got != tc.wantBase {
+				t.Errorf("base presence = %v, want %v:\n%s", got, tc.wantBase, out)
+			}
+			if got := strings.Contains(s, `target="_blank"`); got != tc.wantTarget {
+				t.Errorf("base target presence = %v, want %v:\n%s", got, tc.wantTarget, out)
+			}
+			if strings.Contains(s, "example.com/") {
+				t.Errorf("base href survived:\n%s", out)
+			}
+			if rep.BaseHrefsRemoved != tc.wantRemoved {
+				t.Errorf("BaseHrefsRemoved = %d, want %d", rep.BaseHrefsRemoved, tc.wantRemoved)
+			}
+		})
 	}
 }
 
