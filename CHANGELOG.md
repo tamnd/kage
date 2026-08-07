@@ -6,6 +6,11 @@ All notable changes to kage are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A `robots.txt` reference explains the `kage` agent token, `Crawl-delay`, and
+  the advisory `--no-robots` override ([#8](https://github.com/tamnd/kage/issues/8)).
+
 ### Fixed
 
 - `--resume` picks an interrupted crawl back up instead of doing nothing ([#36](https://github.com/tamnd/kage/issues/36)).
