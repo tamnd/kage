@@ -36,7 +36,7 @@ A page with no working CSS or images is not much of a clone, so kage keeps the p
 
 ## The shape of a clone
 
-kage crawls concurrently from a seed URL, staying within the seed's host (and optionally its subdomains). It is polite by default: it honours `robots.txt` and seeds itself from `sitemap.xml`. Output lands in `$HOME/data/kage/paulgraham.com/`, with pages as `<path>/index.html` and assets under a reserved `_kage/` directory alongside the crawl state that powers resuming.
+kage crawls breadth-first from a seed URL, staying within the seed's host (and optionally its subdomains). It is polite by default: it honours `robots.txt` and seeds itself from `sitemap.xml`. Output lands in `$HOME/data/kage/paulgraham.com/`, with pages as `<path>/index.html` and assets under a reserved `_kage/` directory alongside the crawl state that powers resuming.
 
 ## Then what?
 

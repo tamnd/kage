@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -422,4 +423,174 @@ func readAnyFile(t *testing.T, dir, name string) string {
 		return nil
 	})
 	return out
+}
+
+// chainSite is a five-page site linked in a chain, home to /p1 to /p2 to /p3 to
+// /p4. Nothing but following links finds the far end, so a resumed run that has
+// lost the frontier cannot reach it.
+func chainSite(t *testing.T) *httptest.Server {
+	t.Helper()
+	page := func(title, next string) string {
+		body := `<!doctype html><html><head><title>` + title + `</title></head><body><h1>` + title + `</h1>`
+		if next != "" {
+			body += `<a href="` + next + `">next</a>`
+		}
+		return body + `</body></html>`
+	}
+	links := map[string]string{
+		"/":   "/p1",
+		"/p1": "/p2",
+		"/p2": "/p3",
+		"/p3": "/p4",
+		"/p4": "",
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/robots.txt", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("User-agent: *\nAllow: /\n"))
+	})
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		next, ok := links[r.URL.Path]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(page(r.URL.Path, next)))
+	})
+	return httptest.NewServer(mux)
+}
+
+// TestCloneResumeFinishesTheCrawl guards issue #36. Only the visited set used to
+// be persisted, and the frontier was rebuilt purely by re-rendering pages and
+// following their links, which resume guarantees never happens. So an
+// interrupted crawl, restarted, found its seed already visited, queued nothing,
+// and exited successfully having done no work at all. The README promised the
+// opposite.
+func TestCloneResumeFinishesTheCrawl(t *testing.T) {
+	if testing.Short() {
+		t.Skip("resume test drives Chrome; skipped under -short")
+	}
+	if _, ok := browser.LookChrome(); !ok {
+		t.Skip("no Chrome/Chromium found; skipping resume test")
+	}
+
+	srv := chainSite(t)
+	defer srv.Close()
+	seed, _ := urlx.ParseSeed(srv.URL)
+
+	out := t.TempDir()
+	cfg := DefaultConfig()
+	cfg.OutDir = out
+	cfg.Settle = 300 * time.Millisecond
+
+	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	defer cancel()
+
+	// Stop the first run partway through, the way Ctrl-C would.
+	first := cfg
+	first.MaxPages = 2
+	res1, err := New(seed, first, t.Logf).Run(ctx)
+	if err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+	if res1.Pages != 2 {
+		t.Fatalf("first run wrote %d pages, want 2", res1.Pages)
+	}
+
+	// Resume with no cap: it must pick up the frontier the first run left and
+	// walk the rest of the chain.
+	res2, err := New(seed, cfg, t.Logf).Run(ctx)
+	if err != nil {
+		t.Fatalf("resume run: %v", err)
+	}
+	if res2.Pages != 3 {
+		t.Errorf("resume wrote %d pages, want the 3 that were left", res2.Pages)
+	}
+
+	root := filepath.Join(out, seed.Hostname())
+	for _, p := range []string{"index.html", "p1/index.html", "p2/index.html", "p3/index.html", "p4/index.html"} {
+		if !fileExists(filepath.Join(root, p)) {
+			t.Errorf("%s was never written", p)
+		}
+	}
+
+	// Nothing is left over, so a third run has genuinely nothing to do.
+	res3, err := New(seed, cfg, t.Logf).Run(ctx)
+	if err != nil {
+		t.Fatalf("third run: %v", err)
+	}
+	if res3.Pages != 0 {
+		t.Errorf("third run wrote %d pages, want 0", res3.Pages)
+	}
+}
+
+// TestCloneResumeRetriesFailures covers the other half of issue #36: the
+// reporter asked for "a memory of what failed" so a later run could pick the
+// missing pages up. A page that errored is not marked visited, so it stays in
+// the frontier and a resumed run tries it again.
+func TestCloneResumeRetriesFailures(t *testing.T) {
+	if testing.Short() {
+		t.Skip("resume test drives Chrome; skipped under -short")
+	}
+	if _, ok := browser.LookChrome(); !ok {
+		t.Skip("no Chrome/Chromium found; skipping resume test")
+	}
+
+	var flaky atomic.Bool
+	mux := http.NewServeMux()
+	mux.HandleFunc("/robots.txt", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("User-agent: *\nAllow: /\n"))
+	})
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/":
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = w.Write([]byte(`<!doctype html><html><body><a href="/flaky">flaky</a></body></html>`))
+		case "/flaky":
+			// Down for the first run, back up for the second. The connection is
+			// dropped rather than answered with a 5xx because Chrome renders an
+			// error page happily; only a dead connection is a render failure.
+			if !flaky.Load() {
+				if hj, ok := w.(http.Hijacker); ok {
+					if conn, _, err := hj.Hijack(); err == nil {
+						_ = conn.Close()
+						return
+					}
+				}
+				http.Error(w, "down", http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = w.Write([]byte(`<!doctype html><html><body><h1>back up</h1></body></html>`))
+		default:
+			http.NotFound(w, r)
+		}
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	seed, _ := urlx.ParseSeed(srv.URL)
+
+	out := t.TempDir()
+	cfg := DefaultConfig()
+	cfg.OutDir = out
+	cfg.Settle = 300 * time.Millisecond
+
+	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	defer cancel()
+
+	if _, err := New(seed, cfg, t.Logf).Run(ctx); err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+	flakyPath := filepath.Join(out, seed.Hostname(), "flaky", "index.html")
+	if fileExists(flakyPath) {
+		t.Fatal("the flaky page should not have been written while it was down")
+	}
+
+	flaky.Store(true)
+	if _, err := New(seed, cfg, t.Logf).Run(ctx); err != nil {
+		t.Fatalf("resume run: %v", err)
+	}
+	if !fileExists(flakyPath) {
+		t.Error("resume should have retried the page that failed")
+	}
 }

@@ -103,12 +103,16 @@ func TestInScope(t *testing.T) {
 		{"https://other.com/a", ScopeConfig{}, false},
 		{"https://sub.ex.com/a", ScopeConfig{}, false},
 		{"https://sub.ex.com/a", ScopeConfig{IncludeSubdomains: true}, true},
+		{"https://ex.com/docs", ScopeConfig{ScopePrefix: "/docs/"}, true},
 		{"https://ex.com/docs/x", ScopeConfig{ScopePrefix: "/docs/"}, true},
+		{"https://ex.com/docs/x", ScopeConfig{ScopePrefix: "docs"}, true},
+		{"https://ex.com/documentation", ScopeConfig{ScopePrefix: "/docs"}, false},
 		{"https://ex.com/blog/x", ScopeConfig{ScopePrefix: "/docs/"}, false},
 		// Exclude is a path prefix, not a substring: /private matches /private
 		// and /private/x, but not /a/private/x or /privatething.
 		{"https://ex.com/private/x", ScopeConfig{ExcludePaths: []string{"/private"}}, false},
 		{"https://ex.com/private", ScopeConfig{ExcludePaths: []string{"/private"}}, false},
+		{"https://ex.com/private/x", ScopeConfig{ExcludePaths: []string{"private"}}, false},
 		{"https://ex.com/a/private/x", ScopeConfig{ExcludePaths: []string{"/private"}}, true},
 		{"https://ex.com/privatething", ScopeConfig{ExcludePaths: []string{"/private"}}, true},
 		{"https://ex.com/a/public/x", ScopeConfig{ExcludePaths: []string{"/private/"}}, true},

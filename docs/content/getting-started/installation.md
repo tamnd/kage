@@ -88,12 +88,4 @@ export KAGE_CHROME=/path/to/chromium
 If no browser is found, kage's launcher can download a private copy of Chromium
 on first use.
 
-To block kage from crawling your own site, add a robots.txt group for its agent
-token (the robots fetch matches `User-agent: kage` / `User-agent: Kage`):
-
-```
-User-agent: kage
-Disallow: /
-```
-
 Next: [the quick start](/getting-started/quick-start/).

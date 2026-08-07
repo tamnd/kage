@@ -10,23 +10,45 @@ left off.
 
 ## How resume works
 
-As it writes each page, kage records it in a small state file inside the mirror,
-at `<host>/_kage/state.json`. When a run ends, for any reason, that file holds
-the set of pages already written. Resume is **on by default**: the next time you
-run the same clone, kage loads the state and skips every page it already wrote,
-re-crawling only what is left.
+kage keeps a small state file inside the mirror, at `<host>/_kage/state.json`.
+When a run ends, for any reason, it holds two things: the pages already written,
+and the frontier that was still outstanding. Resume is **on by default**: the
+next time you run the same clone, kage skips every page it already wrote and
+picks the frontier back up where it stopped.
 
 ```bash
 kage clone example.com
 # ... press Ctrl-C partway through ...
+# resume: 412 pages still to do, rerun to continue
 # interrupted; resume state saved (rerun to continue)
 
 kage clone example.com
 # resume: 137 pages already done
+# resume: picking up 412 pages
 ```
 
 Ctrl-C is a clean stop: kage cancels in-flight renders, flushes the state file,
 and exits. You will not lose the pages already written.
+
+## Pages that failed are tried again
+
+A page that errored, a render timeout, a host that was briefly down, is never
+recorded as written, so it stays in the frontier and the next run tries it
+again. Running the same clone a second time after a flaky network is enough to
+fill in the gaps.
+
+A page that `robots.txt` disallows is not carried over, since a later run would
+only fetch `robots.txt` and skip it again.
+
+## Raising a page budget
+
+`--max-pages` is a per-run budget, and the pages it held back stay in the
+frontier. That makes it a way to look before you leap:
+
+```bash
+kage clone example.com -p 20     # see what the first 20 pages look like
+kage clone example.com           # happy with it, crawl the rest
+```
 
 ## Start fresh
 

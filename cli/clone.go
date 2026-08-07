@@ -23,6 +23,7 @@ type cloneFlags struct {
 	browserPages   int
 	maxPages       int
 	maxDepth       int
+	traversal      string
 	maxAssetMB     int64
 	keepMedia      bool
 	skipExt        []string
@@ -68,8 +69,9 @@ func newCloneCmd() *cobra.Command {
 	fs.IntVar(&f.workers, "workers", 4, "concurrent page render workers")
 	fs.IntVar(&f.assetWorkers, "asset-workers", 8, "concurrent asset download workers")
 	fs.IntVar(&f.browserPages, "browser-pages", 4, "Chrome page-pool size")
-	fs.IntVarP(&f.maxPages, "max-pages", "p", 0, "attempt at most N page renders (0 = unlimited); failures count toward the cap")
+	fs.IntVarP(&f.maxPages, "max-pages", "p", 0, "attempt at most N page renders (0 = unlimited)")
 	fs.IntVarP(&f.maxDepth, "max-depth", "d", 0, "link-follow depth cap (0 = unlimited)")
+	fs.StringVar(&f.traversal, "traversal", "bfs", "frontier order: bfs or dfs")
 	fs.Int64Var(&f.maxAssetMB, "max-asset-mb", 25, "skip assets larger than N MB (left on the live web)")
 	fs.BoolVar(&f.keepMedia, "keep-media", false, "download bulk media, installers, and PDFs instead of leaving them remote")
 	fs.StringSliceVar(&f.skipExt, "skip-ext", nil, "extra asset extensions to leave remote, e.g. .svg (repeatable)")
@@ -114,6 +116,7 @@ func runClone(ctx context.Context, arg string, f *cloneFlags) error {
 	cfg.BrowserPages = f.browserPages
 	cfg.MaxPages = f.maxPages
 	cfg.MaxDepth = f.maxDepth
+	cfg.Traversal = f.traversal
 	cfg.MaxAssetBytes = f.maxAssetMB << 20
 	cfg.AssetSameDomain = !f.allAssetHosts
 	if f.keepMedia {

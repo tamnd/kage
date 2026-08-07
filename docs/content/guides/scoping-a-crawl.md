@@ -11,7 +11,7 @@ the crawl.
 ## Limit by count and depth
 
 ```bash
-# Stop after 200 pages
+# Attempt at most 200 page renders
 kage clone example.com --max-pages 200
 
 # Only follow links three hops from the seed
@@ -19,7 +19,8 @@ kage clone example.com --max-depth 3
 ```
 
 `--max-depth 0` (the default) means unlimited depth; `--max-pages 0` means
-unlimited pages. Combine them to put a hard ceiling on a run.
+unlimited attempts. Failed renders count toward the page cap. Combine the flags
+to put a hard ceiling on a run.
 
 ## Limit by path
 
@@ -29,12 +30,13 @@ To clone just one section of a site, restrict the crawl to a path prefix:
 kage clone example.com --scope-prefix /docs
 ```
 
-Only pages whose path starts with `/docs` are followed. Assets are still fetched
-from wherever the page references them, so the section renders correctly.
+Only `/docs` and pages below it are followed; a path such as `/documentation`
+does not match. Assets are still fetched from wherever the page references
+them, so the section renders correctly.
 
 To skip parts of a site, exclude path prefixes (repeatable). An exclude matches
 that path and everything under it (`/archive` skips `/archive` and
-`/archive/2020`), but not an unrelated path that merely contains the string
+`/archive/2020`), but not a path containing the same text elsewhere
 (`/map/archive-index` is still crawled):
 
 ```bash
@@ -74,3 +76,11 @@ kage clone example.com --scroll
 
 This makes each render a little slower but captures media that only loads on
 view.
+
+kage scrolls whichever element on the page actually scrolls, not just the
+window, so this works on app-shell sites where the body is fixed to the viewport
+and the document lives inside an inner container. It keeps stepping until both
+the scroll position and the page height stop changing, which is what an infinite
+feed needs, and gives up after half the render timeout so a page that appends
+content forever cannot stall the crawl. Raise `--render-timeout` if a long feed
+is being cut short.

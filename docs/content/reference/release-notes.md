@@ -8,7 +8,10 @@ The authoritative, commit-level history lives in [`CHANGELOG.md`](https://github
 
 ## Unreleased
 
-- **Crawl controls match their documentation.** `--exclude` is a real path prefix, the unused `--traversal` flag is gone, and `--max-pages` clearly counts failed render attempts.
+- **Crawl path controls use path boundaries.** `--exclude` and
+  `--scope-prefix` match a path and its descendants without catching unrelated
+  names that merely contain the same text. `--max-pages` now accurately says
+  that failed render attempts count toward its cap.
 
 ## v0.3.11
 

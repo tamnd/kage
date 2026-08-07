@@ -253,7 +253,7 @@ func InScope(seed, u *url.URL, cfg ScopeConfig) bool {
 	if !SameSite(seed, u, cfg.IncludeSubdomains) {
 		return false
 	}
-	if cfg.ScopePrefix != "" && !strings.HasPrefix(u.Path, cfg.ScopePrefix) {
+	if cfg.ScopePrefix != "" && !pathHasPrefix(u.Path, cfg.ScopePrefix) {
 		return false
 	}
 	for _, ex := range cfg.ExcludePaths {
@@ -267,7 +267,8 @@ func InScope(seed, u *url.URL, cfg ScopeConfig) bool {
 // pathHasPrefix reports whether path equals prefix or is a descendant of it.
 // Both sides are treated as URL paths: a prefix of "/api" matches "/api",
 // "/api/", and "/api/v1", but not "/apiv1" or "/map/api". A prefix without a
-// leading slash is normalised to one so "--exclude api" behaves like "/api".
+// leading slash is normalised to one so CLI prefixes such as "api" behave like
+// "/api" for both --scope-prefix and --exclude.
 func pathHasPrefix(path, prefix string) bool {
 	if prefix == "" {
 		return false
