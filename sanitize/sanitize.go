@@ -49,6 +49,7 @@ type Report struct {
 	MetaRefreshRemoved  int
 	DeadLinksRemoved    int
 	CondCommentsRemoved int
+	BaseHrefsRemoved    int
 	CharsetAdded        bool
 }
 
@@ -109,6 +110,15 @@ func clean(n *html.Node, opts Options, rep *Report) {
 		}
 		if c.Type == html.ElementNode {
 			switch c.DataAtom {
+			case atom.Base:
+				// Link rewriting has already consumed the document base. Remove every
+				// href so a later base cannot become active when an earlier one is
+				// removed, but preserve target because it controls browsing contexts.
+				rep.BaseHrefsRemoved += stripBaseHrefs(c)
+				if len(c.Attr) == 0 {
+					n.RemoveChild(c)
+					continue
+				}
 			case atom.Script:
 				n.RemoveChild(c)
 				rep.ScriptsRemoved++
@@ -140,6 +150,20 @@ func clean(n *html.Node, opts Options, rep *Report) {
 		}
 		clean(c, opts, rep)
 	}
+}
+
+func stripBaseHrefs(n *html.Node) int {
+	kept := n.Attr[:0]
+	removed := 0
+	for _, a := range n.Attr {
+		if strings.EqualFold(a.Key, "href") {
+			removed++
+			continue
+		}
+		kept = append(kept, a)
+	}
+	n.Attr = kept
+	return removed
 }
 
 // stripHandlers removes every on* event-handler attribute from n.

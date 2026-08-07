@@ -167,6 +167,43 @@ func TestKeepMetaRefreshPlain(t *testing.T) {
 	}
 }
 
+func TestBaseHrefRemovedAfterRewrite(t *testing.T) {
+	cases := []struct {
+		name        string
+		bases       string
+		wantBase    bool
+		wantTarget  bool
+		wantRemoved int
+	}{
+		{name: "href only", bases: `<base href="https://example.com/live/">`, wantRemoved: 1},
+		{name: "target only", bases: `<base target="_blank">`, wantBase: true, wantTarget: true},
+		{name: "href and target", bases: `<base href="https://example.com/live/" target="_blank">`, wantBase: true, wantTarget: true, wantRemoved: 1},
+		{name: "all hrefs", bases: `<base href="https://example.com/one/"><base href="https://example.com/two/" target="_blank">`, wantBase: true, wantTarget: true, wantRemoved: 2},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			in := `<html><head>` + tc.bases + `</head><body><a href="saved.html">saved</a></body></html>`
+			out, rep, err := Strip([]byte(in), Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			s := strings.ToLower(string(out))
+			if got := strings.Contains(s, "<base"); got != tc.wantBase {
+				t.Errorf("base presence = %v, want %v:\n%s", got, tc.wantBase, out)
+			}
+			if got := strings.Contains(s, `target="_blank"`); got != tc.wantTarget {
+				t.Errorf("base target presence = %v, want %v:\n%s", got, tc.wantTarget, out)
+			}
+			if strings.Contains(s, "example.com/") {
+				t.Errorf("base href survived:\n%s", out)
+			}
+			if rep.BaseHrefsRemoved != tc.wantRemoved {
+				t.Errorf("BaseHrefsRemoved = %d, want %d", rep.BaseHrefsRemoved, tc.wantRemoved)
+			}
+		})
+	}
+}
+
 func TestCharsetAddedWhenMissing(t *testing.T) {
 	// A page whose source declared its charset only in the HTTP header has no
 	// <meta charset>. The saved file must gain one so a reader does not fall back
