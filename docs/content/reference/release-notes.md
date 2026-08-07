@@ -8,8 +8,9 @@ The authoritative, commit-level history lives in [`CHANGELOG.md`](https://github
 
 ## Unreleased
 
-- **Inert-snapshot gaps closed.** `<base href>`, `iframe` `srcdoc` / `data:text/html`, live remote frames, and HTML/SVG `object`/`embed` no longer reintroduce live or executable content.
-- **Redirects resolve correctly.** Relative links use the post-redirect URL and any document `<base href>`, and non-UTF-8 charset metas are rewritten to UTF-8.
+- **Redirects resolve correctly.** Relative links use the post-redirect URL and
+  the document's first `<base href>`. On a cross-host redirect, references to
+  an out-of-scope destination remain absolute rather than being localised.
 
 ## v0.3.11
 

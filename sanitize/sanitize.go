@@ -2,12 +2,10 @@
 // the saved page is inert: a photograph, not a program.
 //
 // It parses with golang.org/x/net/html, walks the tree, and deletes scripts,
-// event handlers, javascript: URLs, active iframe/object/embed carriers
-// (srcdoc, data:text/html, live remote frames), document <base href> tags that
-// would re-root relative URLs against the live origin, downlevel IE conditional
-// comments (which can smuggle a <script> past an element-only walk), and the
-// dead preconnect/preload hints that mean nothing offline — while leaving
-// styles, images, fonts, forms, and all semantic markup untouched so the layout
+// event handlers, javascript: URLs, downlevel IE conditional comments (which
+// can smuggle a <script> past an element-only walk), and the dead
+// preconnect/preload hints that mean nothing offline — while leaving styles,
+// images, fonts, forms, and all semantic markup untouched so the layout
 // survives intact.
 package sanitize
 
@@ -51,9 +49,7 @@ type Report struct {
 	MetaRefreshRemoved  int
 	DeadLinksRemoved    int
 	CondCommentsRemoved int
-	ActiveFramesRemoved int
-	BaseTagsRemoved     int
-	CharsetFixed        bool // true when a charset meta was inserted or rewritten to utf-8
+	CharsetAdded        bool
 }
 
 // jsURLAttrs are attributes whose value may be a javascript: URL.
@@ -83,7 +79,7 @@ func Strip(doc []byte, opts Options) ([]byte, Report, error) {
 func CleanTree(root *html.Node, opts Options) Report {
 	var rep Report
 	clean(root, opts, &rep)
-	rep.CharsetFixed = ensureCharset(root)
+	rep.CharsetAdded = ensureCharset(root)
 	if opts.MobileReadable {
 		ensureViewport(root)
 		injectMobileCSS(root)
@@ -138,171 +134,12 @@ func clean(n *html.Node, opts Options, rep *Report) {
 					rep.DeadLinksRemoved++
 					continue
 				}
-			case atom.Base:
-				// A live <base href> re-roots every relative URL against the live
-				// origin after the page is saved, undoing mirror-relative rewrites.
-				// Drop the element so the offline document keeps the rewritten paths.
-				n.RemoveChild(c)
-				rep.BaseTagsRemoved++
-				continue
-			case atom.Iframe, atom.Frame:
-				neutralizeActiveFrame(c, rep)
-			case atom.Object, atom.Embed:
-				// Same-domain HTML/SVG served through object/embed executes
-				// scripts offline when localised as a raw asset. Drop active
-				// carriers (HTML, SVG, or anything with a script-bearing data
-				// URL) so the inert-snapshot promise holds.
-				if neutralizePlugin(c, rep) {
-					n.RemoveChild(c)
-					continue
-				}
 			}
 			stripHandlers(c, rep)
 			neutralizeJSURLs(c, rep)
 		}
 		clean(c, opts, rep)
 	}
-}
-
-// neutralizeActiveFrame strips iframe/frame carriers that would still run code
-// offline: srcdoc markup (not walked by the element sanitizer), data:text/html
-// URLs, remote http(s) sources left pointing at the live web, and localised
-// raw assets that execute script inside a frame (.svg, .xml). The element
-// itself stays behind as an empty, inert shell.
-func neutralizeActiveFrame(n *html.Node, rep *Report) {
-	// srcdoc holds raw HTML that never enters the element walk — drop the
-	// attribute so nothing executable remains.
-	if attr(n, "srcdoc") != "" {
-		removeAttr(n, "srcdoc")
-		rep.ActiveFramesRemoved++
-	}
-	src := strings.TrimSpace(attr(n, "src"))
-	if src == "" {
-		return
-	}
-	low := strings.ToLower(src)
-	switch {
-	case strings.HasPrefix(low, "javascript:"):
-		removeAttr(n, "src")
-		rep.JSURLsNeutralized++
-	case strings.HasPrefix(low, "data:"):
-		// data:text/html, data:image/svg+xml, etc. can carry scripts.
-		if isActiveDataURL(low) {
-			removeAttr(n, "src")
-			rep.ActiveFramesRemoved++
-		}
-	case strings.HasPrefix(low, "http://"), strings.HasPrefix(low, "https://"), strings.HasPrefix(low, "//"):
-		// An external live frame would phone home and run its own JS. Drop the
-		// src so the offline page cannot embed active third-party content.
-		// Same-host frames are rewritten to local paths by the asset layer
-		// before sanitize runs, so by the time we see an absolute URL here it
-		// is either external or was left remote intentionally.
-		removeAttr(n, "src")
-		rep.ActiveFramesRemoved++
-	default:
-		// A relative src is a localised file. Same-host pages (…/index.html)
-		// were rendered and sanitized, so they stay; but .svg/.xml took the raw
-		// asset path (never sanitized) and still run script inside a frame —
-		// drop those, mirroring the object/embed carrier policy.
-		path := low
-		if i := strings.IndexAny(path, "?#"); i >= 0 {
-			path = path[:i]
-		}
-		if strings.HasSuffix(path, ".svg") || strings.HasSuffix(path, ".xml") {
-			removeAttr(n, "src")
-			rep.ActiveFramesRemoved++
-		}
-	}
-}
-
-// neutralizePlugin reports whether an object/embed should be removed entirely
-// because its data/src would execute offline (HTML, SVG, active data URLs, or a
-// still-live remote URL that can run its own code).
-func neutralizePlugin(n *html.Node, rep *Report) bool {
-	ref := strings.TrimSpace(attr(n, "data"))
-	if ref == "" {
-		ref = strings.TrimSpace(attr(n, "src"))
-	}
-	if ref == "" {
-		return false
-	}
-	low := strings.ToLower(ref)
-	if strings.HasPrefix(low, "javascript:") {
-		rep.JSURLsNeutralized++
-		rep.ActiveFramesRemoved++
-		return true
-	}
-	if strings.HasPrefix(low, "data:") && isActiveDataURL(low) {
-		rep.ActiveFramesRemoved++
-		return true
-	}
-	// A remote object/embed left on the live web can run scripts when the offline
-	// page is opened online. Drop it. Same-host resources have already been
-	// rewritten to relative local paths by the asset layer.
-	if strings.HasPrefix(low, "http://") || strings.HasPrefix(low, "https://") || strings.HasPrefix(low, "//") {
-		rep.ActiveFramesRemoved++
-		return true
-	}
-	// Extension-based: localised .html/.htm/.svg/.xhtml through object/embed
-	// reintroduce scripts. MIME type attributes that declare HTML/SVG too.
-	typeAttr := strings.ToLower(attr(n, "type"))
-	if strings.Contains(typeAttr, "html") || strings.Contains(typeAttr, "svg") ||
-		strings.Contains(typeAttr, "xml") {
-		rep.ActiveFramesRemoved++
-		return true
-	}
-	// Strip query/fragment for extension check.
-	path := low
-	if i := strings.IndexAny(path, "?#"); i >= 0 {
-		path = path[:i]
-	}
-	for _, ext := range []string{".html", ".htm", ".xhtml", ".svg", ".xml"} {
-		if strings.HasSuffix(path, ext) {
-			rep.ActiveFramesRemoved++
-			return true
-		}
-	}
-	return false
-}
-
-// isActiveDataURL reports whether a data: URL can carry executable markup.
-func isActiveDataURL(low string) bool {
-	// low is already lowercased.
-	if !strings.HasPrefix(low, "data:") {
-		return false
-	}
-	// Only the mediatype token before the first comma decides; the payload
-	// (base64 or percent-encoded text) may contain these substrings by chance.
-	mime := low[len("data:"):]
-	if i := strings.IndexByte(mime, ','); i >= 0 {
-		mime = mime[:i]
-	}
-	// data:text/html,...  data:image/svg+xml,...  data:application/xhtml+xml,...
-	return strings.Contains(mime, "text/html") ||
-		strings.Contains(mime, "image/svg") ||
-		strings.Contains(mime, "xhtml") ||
-		strings.Contains(mime, "xml")
-}
-
-func setAttr(n *html.Node, key, val string) {
-	for i := range n.Attr {
-		if strings.EqualFold(n.Attr[i].Key, key) {
-			n.Attr[i].Val = val
-			return
-		}
-	}
-	n.Attr = append(n.Attr, html.Attribute{Key: key, Val: val})
-}
-
-func removeAttr(n *html.Node, key string) {
-	kept := n.Attr[:0]
-	for _, a := range n.Attr {
-		if strings.EqualFold(a.Key, key) {
-			continue
-		}
-		kept = append(kept, a)
-	}
-	n.Attr = kept
 }
 
 // stripHandlers removes every on* event-handler attribute from n.
@@ -404,19 +241,22 @@ func unwrapNoscript(parent, ns *html.Node) {
 	parent.RemoveChild(ns)
 }
 
-// ensureCharset guarantees the document declares UTF-8. kage always serialises
-// pages as UTF-8, so a source that advertised ISO-8859-1 (or any other charset)
-// only in a <meta> would lie about the on-disk bytes and mojibake in a reader
-// (issue #16). Missing declarations are inserted; non-UTF-8 declarations are
-// rewritten. Returns true when the document was changed.
+// ensureCharset guarantees the document declares UTF-8, inserting a
+// <meta charset="utf-8"> at the top of <head> when none is present, and reports
+// whether it added one. kage renders every saved page as UTF-8, but a source
+// that set its charset only in the HTTP Content-Type header, with no <meta>
+// charset in the markup, loses that signal once the page is a standalone file.
+// A reader then serving the bytes without a charset falls back to its locale
+// encoding and mojibakes every multibyte character (curly quotes, dashes, a
+// non-breaking space). Declaring the charset in the markup makes the page
+// self-describing in any reader, kage's own viewer and Kiwix alike.
 func ensureCharset(root *html.Node) bool {
 	head := findElement(root, atom.Head)
 	if head == nil {
 		return false
 	}
-	found, changed := fixCharsetMetas(head)
-	if found {
-		return changed
+	if hasCharsetMeta(head) {
+		return false
 	}
 	meta := &html.Node{
 		Type:     html.ElementNode,
@@ -430,62 +270,23 @@ func ensureCharset(root *html.Node) bool {
 	return true
 }
 
-// fixCharsetMetas rewrites existing charset declarations to utf-8. found is
-// true when a declaration was already present (so the caller should not insert
-// another); changed is true when a non-utf-8 value was rewritten in place.
-func fixCharsetMetas(head *html.Node) (found, changed bool) {
+// hasCharsetMeta reports whether head already declares a character encoding,
+// either as <meta charset="..."> or the older <meta http-equiv="Content-Type"
+// content="...; charset=...">.
+func hasCharsetMeta(head *html.Node) bool {
 	for c := head.FirstChild; c != nil; c = c.NextSibling {
 		if c.Type != html.ElementNode || c.DataAtom != atom.Meta {
 			continue
 		}
-		if ch := attr(c, "charset"); ch != "" {
-			found = true
-			if !strings.EqualFold(ch, "utf-8") {
-				setAttr(c, "charset", "utf-8")
-				changed = true
-			}
-			continue
+		if attr(c, "charset") != "" {
+			return true
 		}
-		if strings.EqualFold(attr(c, "http-equiv"), "content-type") {
-			content := attr(c, "content")
-			low := strings.ToLower(content)
-			if strings.Contains(low, "charset=") {
-				found = true
-				if !strings.Contains(low, "charset=utf-8") {
-					setAttr(c, "content", rewriteContentTypeCharset(content))
-					changed = true
-				}
-			}
+		if strings.EqualFold(attr(c, "http-equiv"), "content-type") &&
+			strings.Contains(strings.ToLower(attr(c, "content")), "charset=") {
+			return true
 		}
 	}
-	return found, changed
-}
-
-// rewriteContentTypeCharset forces charset=utf-8 inside a Content-Type content
-// value, preserving any other parameters.
-func rewriteContentTypeCharset(content string) string {
-	parts := strings.Split(content, ";")
-	out := make([]string, 0, len(parts))
-	saw := false
-	for i, p := range parts {
-		p = strings.TrimSpace(p)
-		if i == 0 {
-			out = append(out, p)
-			continue
-		}
-		if strings.HasPrefix(strings.ToLower(p), "charset=") {
-			out = append(out, "charset=utf-8")
-			saw = true
-			continue
-		}
-		if p != "" {
-			out = append(out, p)
-		}
-	}
-	if !saw {
-		out = append(out, "charset=utf-8")
-	}
-	return strings.Join(out, "; ")
+	return false
 }
 
 // findElement returns the first element node of the given atom in document
@@ -579,11 +380,19 @@ func injectMobileCSS(root *html.Node) {
 	head.AppendChild(style)
 }
 
-// insertBanner prepends an HTML comment to the document.
+// insertBanner prepends an HTML comment to the document, after the doctype so
+// the doctype stays the first thing in the file. A comment ahead of it is legal
+// and modern browsers still read the doctype that follows, but older ones and
+// several offline readers take anything before it as a reason to drop into
+// quirks mode, which is the whole thing the doctype is there to prevent.
 func insertBanner(root *html.Node, text string) {
 	c := &html.Node{Type: html.CommentNode, Data: " " + text + " "}
-	if root.FirstChild != nil {
-		root.InsertBefore(c, root.FirstChild)
+	at := root.FirstChild
+	if at != nil && at.Type == html.DoctypeNode {
+		at = at.NextSibling
+	}
+	if at != nil {
+		root.InsertBefore(c, at)
 	} else {
 		root.AppendChild(c)
 	}

@@ -133,7 +133,7 @@ func (c *Cloner) Run(ctx context.Context) (Result, error) {
 		if err := c.front.load(c.statePth); err != nil {
 			c.logf("resume: could not load state: %v", err)
 		} else if n := c.front.visitedCount(); n > 0 {
-			c.logf("resume: %d pages already done", n)
+			c.logf("resume: %s already done", pagesPlural(n))
 		}
 	}
 
@@ -170,8 +170,15 @@ func (c *Cloner) Run(ctx context.Context) (Result, error) {
 		})
 	}
 
-	// Seed.
+	// Seed. A resumed run also re-queues the frontier the previous run saved on
+	// the way out. Without it the seed is already visited, enqueuePage turns it
+	// down, and since the frontier is otherwise rebuilt only by re-rendering
+	// pages and following their links, the run ends having done nothing at all
+	// (issue #36).
 	c.enqueuePage(ctx, c.seed, 0)
+	if n := c.requeueUnfinished(ctx); n > 0 {
+		c.logf("resume: picking up %s", pagesPlural(n))
+	}
 	if c.cfg.FollowSitemap {
 		c.seedSitemaps(ctx)
 	}
@@ -187,6 +194,11 @@ func (c *Cloner) Run(ctx context.Context) (Result, error) {
 	if c.cfg.Persist {
 		if err := c.front.save(c.statePth); err != nil {
 			c.logf("could not save resume state: %v", err)
+		} else if n := c.front.pendingCount(); n > 0 {
+			// Pages left in the frontier: interrupted, over the page budget, or
+			// failed. Saying so is the "memory of what failed" asked for in issue
+			// #36, and it stops a short run looking like a finished one.
+			c.logf("resume: %s still to do, rerun to continue", pagesPlural(n))
 		}
 	}
 
@@ -269,6 +281,7 @@ func (c *Cloner) processPage(ctx context.Context, j pageItem) {
 	key := c.pageKey(j.u)
 	if c.cfg.RespectRobots && !c.robots.Allowed(j.u.Path) {
 		c.stats.skipped.Add(1)
+		c.front.markDone(key)
 		return
 	}
 	if !c.waitForCrawlDelay(ctx) {
@@ -493,6 +506,32 @@ func classifyError(err error) string {
 	return err.Error()
 }
 
+// pagesPlural renders a page count with the right noun, for log lines that are
+// as likely to say 1 as 1,400.
+func pagesPlural(n int) string {
+	if n == 1 {
+		return "1 page"
+	}
+	return fmt.Sprintf("%d pages", n)
+}
+
+// requeueUnfinished puts the previous run's outstanding frontier back in the
+// queue and reports how many pages it queued. It is a no-op on a fresh run.
+func (c *Cloner) requeueUnfinished(ctx context.Context) int {
+	n := 0
+	for _, p := range c.front.unfinished() {
+		u, err := url.Parse(p.URL)
+		if err != nil {
+			c.logf("resume: dropping unreadable state entry %q: %v", p.URL, err)
+			continue
+		}
+		if c.enqueuePage(ctx, u, p.Depth) {
+			n++
+		}
+	}
+	return n
+}
+
 // enqueuePage offers a page URL to the frontier, honouring the visited set, the
 // depth cap, and the page budget. It reports whether the page was newly queued.
 func (c *Cloner) enqueuePage(ctx context.Context, u *url.URL, depth int) bool {
@@ -503,7 +542,10 @@ func (c *Cloner) enqueuePage(ctx context.Context, u *url.URL, depth int) bool {
 	if c.front.isVisited(key) {
 		return false
 	}
-	if !c.front.offer(key) {
+	// Recording the page as unfinished happens here, before the budget check
+	// below, so a page that was discovered but never started is still in the
+	// frontier the next run picks up (issue #36).
+	if !c.front.offer(key, pendingPage{URL: u.String(), Depth: depth}) {
 		return false
 	}
 	c.mu.Lock()

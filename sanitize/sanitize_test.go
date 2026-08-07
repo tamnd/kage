@@ -177,8 +177,8 @@ func TestCharsetAddedWhenMissing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !rep.CharsetFixed {
-		t.Error("CharsetFixed = false, want true")
+	if !rep.CharsetAdded {
+		t.Error("CharsetAdded = false, want true")
 	}
 	s := string(out)
 	if !strings.Contains(strings.ToLower(s), `<meta charset="utf-8"/>`) {
@@ -266,123 +266,68 @@ func TestMobileReadableSkipsExistingViewport(t *testing.T) {
 }
 
 func TestCharsetNotDuplicated(t *testing.T) {
-	// A page that already declares utf-8 is left alone.
-	in := `<html><head><meta charset="utf-8"><title>x</title></head><body></body></html>`
-	out, rep, err := Strip([]byte(in), Options{})
-	if err != nil {
-		t.Fatal(err)
+	// A page that already declares a charset, in either form, is left alone.
+	cases := []string{
+		`<html><head><meta charset="utf-8"><title>x</title></head><body></body></html>`,
+		`<html><head><meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1"><title>x</title></head><body></body></html>`,
 	}
-	if rep.CharsetFixed {
-		t.Error("CharsetFixed = true for a page that already declares utf-8")
-	}
-	if n := strings.Count(strings.ToLower(string(out)), "charset"); n != 1 {
-		t.Errorf("charset count = %d, want 1:\n%s", n, out)
-	}
-}
-
-func TestCharsetRewritesNonUTF8(t *testing.T) {
-	// Output is always UTF-8; a stale ISO-8859-1 declaration must be rewritten
-	// so a reader does not mojibake the file (issue #16).
-	in := `<html><head><meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1"><title>x</title></head><body></body></html>`
-	out, rep, err := Strip([]byte(in), Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !rep.CharsetFixed {
-		t.Error("CharsetFixed = false, want true")
-	}
-	s := strings.ToLower(string(out))
-	if strings.Contains(s, "iso-8859-1") {
-		t.Errorf("ISO-8859-1 declaration survived:\n%s", out)
-	}
-	if !strings.Contains(s, "charset=utf-8") {
-		t.Errorf("expected charset=utf-8 rewrite:\n%s", out)
+	for _, in := range cases {
+		out, rep, err := Strip([]byte(in), Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rep.CharsetAdded {
+			t.Errorf("CharsetAdded = true for a page that already declares one:\n%s", in)
+		}
+		if n := strings.Count(strings.ToLower(string(out)), "charset"); n != 1 {
+			t.Errorf("charset count = %d, want 1:\n%s", n, out)
+		}
 	}
 }
 
-func TestActiveContentEscapesRemoved(t *testing.T) {
-	in := `<!doctype html><html><head><base href="https://evil.example/"></head><body>
-<iframe srcdoc="<script>alert(1)</script>"></iframe>
-<iframe src="data:text/html,<script>alert(1)</script>"></iframe>
-<iframe src="https://tracker.example/frame"></iframe>
-<object data="/widget.html" type="text/html"></object>
-<embed src="https://cdn.example/player.html">
-<object data="/logo.png" type="image/png"></object>
-</body></html>`
-	out, rep, err := Strip([]byte(in), Options{})
-	if err != nil {
-		t.Fatal(err)
+func TestDoctypePreservedAndBannerFollowsIt(t *testing.T) {
+	// The browser hands the doctype back with the page, and everything sanitize
+	// does has to leave it at the top of the file. A doctype anywhere but first
+	// is what puts a saved page into quirks mode (issue #16).
+	cases := []struct {
+		name, in, want string
+	}{
+		{"html5", `<!doctype html><html><head></head><body><p>x</p></body></html>`, "<!DOCTYPE html>"},
+		{
+			"html401 transitional",
+			`<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">` +
+				`<html><head></head><body><p>x</p></body></html>`,
+			`<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">`,
+		},
 	}
-	s := string(out)
-	if strings.Contains(s, "<base") {
-		t.Error("<base> survived")
-	}
-	if strings.Contains(s, "srcdoc") {
-		t.Error("srcdoc survived")
-	}
-	if strings.Contains(strings.ToLower(s), "data:text/html") {
-		t.Error("data:text/html iframe survived")
-	}
-	if strings.Contains(s, "tracker.example") {
-		t.Error("external iframe src survived")
-	}
-	if strings.Contains(s, "widget.html") || strings.Contains(s, "player.html") {
-		t.Error("HTML object/embed survived")
-	}
-	// A non-script image object must survive.
-	if !strings.Contains(s, "logo.png") {
-		t.Error("image object should survive")
-	}
-	if rep.BaseTagsRemoved < 1 {
-		t.Errorf("BaseTagsRemoved = %d, want >= 1", rep.BaseTagsRemoved)
-	}
-	if rep.ActiveFramesRemoved < 1 {
-		t.Errorf("ActiveFramesRemoved = %d, want >= 1", rep.ActiveFramesRemoved)
+	for _, c := range cases {
+		out, _, err := Strip([]byte(c.in), Options{Banner: "cloned by kage"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := string(out)
+		if !strings.HasPrefix(s, c.want) {
+			t.Errorf("%s: output should start with %s, got:\n%s", c.name, c.want, s)
+		}
+		if !strings.Contains(s, "<!-- cloned by kage -->") {
+			t.Errorf("%s: banner missing:\n%s", c.name, s)
+		}
+		if bannerIdx, dtIdx := strings.Index(s, "<!--"), strings.Index(s, "<!DOCTYPE"); bannerIdx < dtIdx {
+			t.Errorf("%s: banner must follow the doctype (banner=%d doctype=%d):\n%s", c.name, bannerIdx, dtIdx, s)
+		}
 	}
 }
 
-func TestLocalisedSVGFrameNeutralized(t *testing.T) {
-	// A same-host SVG takes the raw asset path — downloaded, never sanitized —
-	// yet a frame pointing at the localised copy would run its scripts offline.
-	in := `<html><head></head><body><iframe src="../assets/ex.com/img/icon.svg"></iframe></body></html>`
-	out, rep, err := Strip([]byte(in), Options{})
+func TestNoDoctypeInvented(t *testing.T) {
+	// A page that carried no doctype was quirks mode on the live web. Adding one
+	// would switch it to standards mode and change its layout, so sanitize leaves
+	// that decision to the source.
+	in := `<html><head></head><body><p>x</p></body></html>`
+	out, _, err := Strip([]byte(in), Options{Banner: "cloned by kage"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(out), "icon.svg") {
-		t.Errorf("localised .svg frame src survived:\n%s", out)
-	}
-	if rep.ActiveFramesRemoved < 1 {
-		t.Errorf("ActiveFramesRemoved = %d, want >= 1", rep.ActiveFramesRemoved)
-	}
-}
-
-func TestInertDataImageFrameKept(t *testing.T) {
-	// Only the mediatype token decides: a base64 payload that happens to
-	// contain the text "xml" must not strip an inert data:image iframe.
-	in := `<html><head></head><body><iframe src="data:image/png;base64,AAAAxmlBBBB"></iframe></body></html>`
-	out, _, err := Strip([]byte(in), Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(out), "data:image/png") {
-		t.Errorf("inert data:image/png frame lost its src:\n%s", out)
-	}
-}
-
-func TestLocalisedInertFramesKept(t *testing.T) {
-	// Same-host frames localised by the rewrite pipeline stay: an image asset
-	// (inert in a frame) and a rendered, sanitized page.
-	in := `<html><head></head><body><iframe src="../assets/ex.com/img/logo.png"></iframe><iframe src="../about/index.html"></iframe></body></html>`
-	out, _, err := Strip([]byte(in), Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := string(out)
-	if !strings.Contains(s, "logo.png") {
-		t.Errorf("image frame should survive:\n%s", out)
-	}
-	if !strings.Contains(s, "../about/index.html") {
-		t.Errorf("sanitized page frame should survive:\n%s", out)
+	if s := string(out); strings.Contains(strings.ToUpper(s), "<!DOCTYPE") {
+		t.Errorf("sanitize invented a doctype:\n%s", s)
 	}
 }

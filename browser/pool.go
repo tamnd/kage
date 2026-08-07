@@ -7,6 +7,7 @@ package browser
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"runtime"
@@ -17,6 +18,7 @@ import (
 	"github.com/go-rod/rod/lib/proto"
 	"github.com/tamnd/kage/internal/rod"
 	"github.com/tamnd/kage/internal/stealth"
+	"golang.org/x/net/html"
 )
 
 // Options configure a Pool.
@@ -96,11 +98,18 @@ func (p *Pool) Render(ctx context.Context, rawURL string) (RenderResult, error) 
 		return RenderResult{}, err
 	}
 
-	page, err := stealth.Page(b)
+	// Create the page in the background so headful mode does not pull the Chrome
+	// window to the foreground and steal focus on every new tab. The only
+	// difference from stealth.Page is Background:true; the anti-detection script
+	// is still injected via stealth.JS.
+	page, err := b.Page(proto.TargetCreateTarget{Background: true})
 	if err != nil {
 		return RenderResult{}, fmt.Errorf("new page: %w", err)
 	}
 	defer func() { _ = page.Close() }()
+	if _, err := page.EvalOnNewDocument(stealth.JS); err != nil {
+		return RenderResult{}, fmt.Errorf("inject stealth: %w", err)
+	}
 
 	page = page.Context(ctx).Timeout(p.opts.RenderTimeout)
 
@@ -134,21 +143,117 @@ func (p *Pool) Render(ctx context.Context, rawURL string) (RenderResult, error) 
 	}
 	settle(page, p.opts.Settle)
 	if p.opts.Scroll {
-		autoScroll(page)
+		autoScroll(page, scrollBudget(p.opts.RenderTimeout))
 		settle(page, p.opts.Settle)
 	}
 
-	html, err := page.HTML()
+	doc, err := page.HTML()
 	if err != nil {
 		return RenderResult{}, fmt.Errorf("serialise %s: %w", rawURL, err)
 	}
+	// page.HTML() is the outerHTML of <html>, which cannot contain the doctype,
+	// so put it back (issue #16).
+	if dt := pageDoctype(page); dt != "" {
+		doc = dt + "\n" + doc
+	}
 
-	res := RenderResult{HTML: html, FinalURL: rawURL}
+	res := RenderResult{HTML: doc, FinalURL: rawURL}
 	if info, err := page.Info(); err == nil && info != nil {
 		res.FinalURL = info.URL
 		res.Title = info.Title
 	}
 	return res, nil
+}
+
+// doctypeJS reads the parts of document.doctype. It returns them as a JSON
+// array rather than a ready-made string so the source form is assembled in Go,
+// where a hostile page cannot influence it.
+const doctypeJS = `() => {
+	const d = document.doctype;
+	return d ? JSON.stringify([d.name, d.publicId, d.systemId]) : "";
+}`
+
+// pageDoctype returns the document's doctype in source form, or "" when the
+// page has none or Chrome will not say.
+//
+// Chrome's serialisation of a page is the outerHTML of <html>, and a doctype is
+// a sibling of <html> rather than a child, so it is never in that string. Left
+// alone, every page kage saves comes out with no doctype and every browser
+// renders it in quirks mode: the box model reverts to the pre-CSS2 IE one, so
+// the saved copy lays out differently from the original, and the <meta charset>
+// declaration loses its authority, so a reader is free to fall back to its
+// locale encoding and mojibake the text. A reader with no encoding menu, a
+// webview or an e-reader, has no way back from that (issue #16).
+//
+// The doctype is reproduced exactly rather than replaced with <!DOCTYPE html>,
+// because the string itself selects the rendering mode: HTML 4.01 Transitional
+// is standards mode with its system identifier and quirks mode without it. A
+// page that was genuinely quirks mode on the live web keeps no doctype and so
+// keeps rendering the way its author saw it.
+func pageDoctype(page *rod.Page) string {
+	obj, err := page.Eval(doctypeJS)
+	if err != nil || obj == nil {
+		return ""
+	}
+	var parts []string
+	if err := json.Unmarshal([]byte(obj.Value.Str()), &parts); err != nil || len(parts) != 3 {
+		return ""
+	}
+	return renderDoctype(parts[0], parts[1], parts[2])
+}
+
+// renderDoctype rebuilds the source form of a doctype from its DOM parts with
+// the same renderer that writes the saved page, so the two always agree.
+//
+// The parts arrive from an untrusted page and land at the very top of a file we
+// write, so anything that does not look like a doctype a parser produced is
+// dropped rather than escaped. x/net/html quotes the identifiers but does not
+// escape a quote inside one, and it writes the name verbatim.
+func renderDoctype(name, publicID, systemID string) string {
+	if !validDoctypeName(name) || !validDoctypeID(publicID) || !validDoctypeID(systemID) {
+		return ""
+	}
+	n := &html.Node{Type: html.DoctypeNode, Data: name}
+	if publicID != "" {
+		n.Attr = append(n.Attr, html.Attribute{Key: "public", Val: publicID})
+	}
+	if systemID != "" {
+		n.Attr = append(n.Attr, html.Attribute{Key: "system", Val: systemID})
+	}
+	var b strings.Builder
+	if err := html.Render(&b, n); err != nil {
+		return ""
+	}
+	return b.String()
+}
+
+// validDoctypeName accepts the name of a doctype: ASCII letters only. In
+// practice it is always "html", but "math" and "svg" are legal too.
+func validDoctypeName(name string) bool {
+	if name == "" || len(name) > 32 {
+		return false
+	}
+	for _, r := range name {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') {
+			return false
+		}
+	}
+	return true
+}
+
+// validDoctypeID accepts a public or system identifier: printable ASCII with no
+// quote or angle bracket, which is every identifier any real doctype uses and
+// nothing that could close the token early.
+func validDoctypeID(id string) bool {
+	if len(id) > 256 {
+		return false
+	}
+	for _, r := range id {
+		if r < 0x20 || r > 0x7e || r == '"' || r == '\'' || r == '<' || r == '>' {
+			return false
+		}
+	}
+	return true
 }
 
 // getBrowser lazily connects to or launches Chrome.
@@ -472,20 +577,100 @@ func settle(page *rod.Page, d time.Duration) {
 	}
 }
 
-// autoScroll scrolls to the bottom in steps to trigger lazy-loaded images.
-func autoScroll(page *rod.Page) {
+// autoScrollJS scrolls a page to the bottom in steps so lazy-loaded content
+// mounts before the DOM is serialised, then returns to the top.
+//
+// It scrolls whichever element actually scrolls rather than the window. An app
+// shell keeps a fixed-height <body> with overflow hidden and puts the document
+// in an inner container with overflow-y:auto, so window.scrollBy moves nothing
+// at all and nothing ever lazy-loads. Feishu, Notion, Linear, Google Docs and
+// most admin dashboards are built this way (issue #61).
+//
+// Progress is measured by reading scrollTop back rather than by summing the
+// deltas asked for. The old code compared its running total against
+// document.body.scrollHeight, which in an app shell is the viewport height, so
+// the very first 800px step cleared the bound and the loop resolved after one
+// tick. Summing deltas is wrong on ordinary pages too: once the page is at its
+// bottom scrollBy stops moving but the total keeps climbing, so a short page
+// exits early and an infinite feed exits at a fixed distance no matter what
+// loaded.
+//
+// A tick counts as progress if the scroller moved or the document grew under
+// it, the second being what an infinite feed does. Stopping only after several
+// ticks with neither is also what gives content fetched on intersection time to
+// arrive, since the request often has not started when the scroll reaches the
+// bottom.
+const autoScrollJS = `(budgetMs) => new Promise((resolve) => {
+	const scrollable = (el) => {
+		const s = getComputedStyle(el);
+		return (s.overflowY === "auto" || s.overflowY === "scroll" || s.overflowY === "overlay");
+	};
+	// Start from the document scroller, which scrolls whatever its computed
+	// overflow says, then take any inner container with more to scroll.
+	let target = document.scrollingElement || document.documentElement;
+	let range = target ? target.scrollHeight - target.clientHeight : 0;
+	for (const el of document.querySelectorAll("*")) {
+		const r = el.scrollHeight - el.clientHeight;
+		if (r > range && scrollable(el)) {
+			target = el;
+			range = r;
+		}
+	}
+	if (!target) {
+		resolve("no scroller");
+		return;
+	}
+
+	const tick = 150;
+	const step = Math.max(200, Math.round(target.clientHeight * 0.8));
+	const stallLimit = 10;
+	const deadline = Date.now() + budgetMs;
+	let stalls = 0, lastTop = -1, lastHeight = -1, steps = 0;
+
+	const timer = setInterval(() => {
+		const top = target.scrollTop, height = target.scrollHeight;
+		if (top === lastTop && height === lastHeight) {
+			stalls++;
+		} else {
+			stalls = 0;
+		}
+		lastTop = top;
+		lastHeight = height;
+		if (stalls >= stallLimit || Date.now() >= deadline) {
+			clearInterval(timer);
+			// Back to the top. On a virtualised document the bottom blocks unmount
+			// as the top remounts, so this at least captures the beginning rather
+			// than the end.
+			target.scrollTop = 0;
+			resolve(steps + " steps");
+			return;
+		}
+		target.scrollTop = top + step;
+		steps++;
+	}, tick);
+})`
+
+// autoScroll drives the page to the bottom and back, within budget. A budget is
+// enforced inside the page because the render timeout applies to the whole page
+// handle: a scroll that ran until the timeout would take page.HTML() down with
+// it and fail a render that used to succeed.
+func autoScroll(page *rod.Page, budget time.Duration) {
 	defer func() { _ = recover() }()
-	_, _ = page.Eval(`() => new Promise((resolve) => {
-		let total = 0;
-		const step = 800;
-		const timer = setInterval(() => {
-			window.scrollBy(0, step);
-			total += step;
-			if (total >= document.body.scrollHeight) {
-				clearInterval(timer);
-				window.scrollTo(0, 0);
-				resolve(true);
-			}
-		}, 100);
-	})`)
+	if budget <= 0 {
+		return
+	}
+	_, _ = page.Eval(autoScrollJS, budget.Milliseconds())
+}
+
+// scrollBudget is how long autoScroll may spend, leaving the rest of the render
+// timeout for the settle and the serialisation that follow it.
+func scrollBudget(renderTimeout time.Duration) time.Duration {
+	const floor = 5 * time.Second
+	if renderTimeout <= 0 {
+		return floor
+	}
+	if half := renderTimeout / 2; half > floor {
+		return half
+	}
+	return min(floor, renderTimeout)
 }
