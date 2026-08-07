@@ -8,7 +8,35 @@ All notable changes to kage are recorded here. The format follows
 
 ### Fixed
 
-- Packing a host that has HTML but no root `index.html` synthesises a directory-index landing page so Kiwix and `kage open` no longer jump to an arbitrary first page ([#62](https://github.com/tamnd/kage/issues/62)).
+- Packing a mirror with multiple HTML pages but no root `index.html` creates a
+  bounded, title-sorted landing page, while a single-page archive still opens
+  directly on its article and keeps that article's title metadata ([#62](https://github.com/tamnd/kage/issues/62)).
+- `--resume` picks an interrupted crawl back up instead of doing nothing ([#36](https://github.com/tamnd/kage/issues/36)).
+  `state.json` persisted only the visited set, and the frontier was rebuilt purely by re-rendering pages and following their links, which resume exists to avoid.
+  So a resumed run found its seed already visited, `enqueuePage` turned it down, nothing was queued, and the run printed `pages 0` and exited successfully with most of the site still missing.
+  Only sites with a `sitemap.xml` appeared to work, because those URLs are seeded independently on every run.
+  The unfinished frontier is now saved alongside the visited set, with each page's depth so `--max-depth` keeps its meaning across a restart, and re-queued at startup.
+  A run now also reports what it is leaving behind: `resume: 412 pages still to do, rerun to continue`.
+- A page that failed is retried by the next run instead of being lost.
+  Failures were never recorded anywhere, so the only way to pick them up was `--refresh`, which re-renders the entire site.
+  This is the "memory of what failed" asked for in [#36](https://github.com/tamnd/kage/issues/36).
+  A page `robots.txt` disallows is not carried over, since a later run would only fetch `robots.txt` and skip it again.
+- `--max-pages` no longer discards the pages it held back.
+  They stay in the frontier, so `kage clone example.com -p 20` to inspect a site and then `kage clone example.com` to finish it now works as a workflow.
+
+- `--scroll` scrolls the element that actually scrolls, so lazy-loaded content appears on app-shell pages ([#61](https://github.com/tamnd/kage/issues/61)).
+  It called `window.scrollBy`, which moves nothing on a site whose body is fixed to the viewport height with the document inside an inner container, and that is how Feishu, Notion, Linear and most dashboards are built.
+  The loop also stopped as soon as the distance travelled reached `document.body.scrollHeight`, which on those pages is one viewport, so it gave up after a single step even where the window did scroll.
+  kage now picks the largest genuinely scrollable element on the page, reads `scrollTop` back after each step instead of assuming the step landed, and keeps going until the position and the height both stop changing, which is what infinite scroll needs.
+  The scroll is bounded by half the render timeout, at least five seconds, so a page that appends content forever cannot hold a worker indefinitely.
+
+- Saved pages keep their `<!DOCTYPE html>` instead of rendering in quirks mode ([#16](https://github.com/tamnd/kage/issues/16)).
+  kage serialises a rendered page as the outerHTML of `<html>`, and a doctype is a sibling of `<html>` rather than a child, so it was never in that string and every page kage has ever written came out without one.
+  A document with no doctype is quirks mode in every browser: the box model reverts to the pre-CSS2 IE one and `line-height`, table cell inheritance and `vertical-align` all change, so the saved copy laid out differently from the original, and the `<meta charset>` declaration lost its authority, leaving a reader free to fall back to its locale encoding and mojibake every multibyte character.
+  That is the encoding problem reported in #16, and a webview or e-reader with no encoding menu has no way back from it.
+  The doctype is now read from the DOM and reproduced exactly rather than replaced with `<!DOCTYPE html>`, because the string itself selects the rendering mode: HTML 4.01 Transitional is standards mode with its system identifier and quirks mode without it.
+  A page that genuinely had no doctype on the live web still gets none, so it keeps rendering the way its author saw it.
+- The `cloned by kage` banner comment is written after the doctype rather than before it, so the doctype stays the first thing in the file.
 
 ## [0.3.11] - 2026-08-01
 

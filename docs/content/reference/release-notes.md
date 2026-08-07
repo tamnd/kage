@@ -8,7 +8,9 @@ The authoritative, commit-level history lives in [`CHANGELOG.md`](https://github
 
 ## Unreleased
 
-- **ZIM packs get a usable landing page.** Hosts without a root `index.html` receive a synthetic directory index instead of opening an arbitrary first page ([#62](https://github.com/tamnd/kage/issues/62)).
+- **Multi-page ZIM packs get a usable landing page.** Mirrors without a root
+  `index.html` list pages by title instead of opening an arbitrary first page;
+  single-page archives still open directly on their article ([#62](https://github.com/tamnd/kage/issues/62)).
 
 ## v0.3.11
 
