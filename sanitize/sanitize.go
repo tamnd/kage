@@ -253,8 +253,9 @@ func ensureCharset(root *html.Node) (added, rewritten bool) {
 	if head == nil {
 		return false, false
 	}
-	if found, changed := fixCharsetMetas(root); found {
-		return false, changed
+	fix := fixCharsetMetas(root)
+	if fix.declared {
+		return false, fix.rewritten
 	}
 	meta := &html.Node{
 		Type:     html.ElementNode,
@@ -265,56 +266,63 @@ func ensureCharset(root *html.Node) (added, rewritten bool) {
 	// The declaration must precede any content for a reader to honour it, so it
 	// goes first in <head>.
 	head.InsertBefore(meta, head.FirstChild)
-	return true, false
+	return true, fix.rewritten
+}
+
+type charsetMetaFix struct {
+	declared  bool
+	rewritten bool
 }
 
 // fixCharsetMetas finds charset declarations anywhere in the parsed document
 // and rewrites non-UTF-8 values. Searching the whole tree also handles malformed
 // input whose meta node Chrome serialised outside <head> without adding a
-// second, contradictory declaration.
-func fixCharsetMetas(n *html.Node) (found, changed bool) {
+// second, contradictory declaration. Declarations inside template content are
+// rewritten but do not count as declarations for the containing document.
+func fixCharsetMetas(n *html.Node) charsetMetaFix {
+	var fix charsetMetaFix
 	if n.Type == html.ElementNode && n.DataAtom == atom.Meta {
 		if charset := strings.TrimSpace(attr(n, "charset")); charset != "" {
-			found = true
+			fix.declared = true
 			if !strings.EqualFold(charset, "utf-8") {
 				setAttr(n, "charset", "utf-8")
-				changed = true
+				fix.rewritten = true
 			}
 		} else if strings.EqualFold(attr(n, "http-equiv"), "content-type") {
-			content, hasCharset, contentChanged := rewriteContentTypeCharset(attr(n, "content"))
-			if hasCharset {
-				found = true
-			}
-			if contentChanged {
+			content, contentFix := rewriteContentTypeCharset(attr(n, "content"))
+			fix = contentFix
+			if contentFix.rewritten {
 				setAttr(n, "content", content)
-				changed = true
 			}
 		}
 	}
 	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		childFound, childChanged := fixCharsetMetas(c)
-		found = found || childFound
-		changed = changed || childChanged
+		childFix := fixCharsetMetas(c)
+		fix.rewritten = fix.rewritten || childFix.rewritten
+		if n.Type != html.ElementNode || n.DataAtom != atom.Template {
+			fix.declared = fix.declared || childFix.declared
+		}
 	}
-	return found, changed
+	return fix
 }
 
 // rewriteContentTypeCharset rewrites a charset parameter while preserving the
 // media type and other parameters. It accepts optional whitespace around '='.
-func rewriteContentTypeCharset(content string) (rewritten string, found, changed bool) {
+func rewriteContentTypeCharset(content string) (string, charsetMetaFix) {
+	var fix charsetMetaFix
 	parts := strings.Split(content, ";")
 	for i := 1; i < len(parts); i++ {
 		key, value, ok := strings.Cut(parts[i], "=")
 		if !ok || !strings.EqualFold(strings.TrimSpace(key), "charset") {
 			continue
 		}
-		found = true
+		fix.declared = true
 		if !strings.EqualFold(strings.Trim(strings.TrimSpace(value), `"'`), "utf-8") {
 			parts[i] = " charset=utf-8"
-			changed = true
+			fix.rewritten = true
 		}
 	}
-	return strings.Join(parts, ";"), found, changed
+	return strings.Join(parts, ";"), fix
 }
 
 // findElement returns the first element node of the given atom in document

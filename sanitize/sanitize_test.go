@@ -311,6 +311,27 @@ func TestCharsetRewritesNonUTF8(t *testing.T) {
 	}
 }
 
+func TestCharsetInTemplateDoesNotDeclareDocumentEncoding(t *testing.T) {
+	in := `<html><head><template><meta charset="shift_jis"></template><title>x</title></head><body></body></html>`
+	out, rep, err := Strip([]byte(in), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rep.CharsetAdded || !rep.CharsetRewritten {
+		t.Errorf("template declaration should be rewritten without satisfying the document: %+v", rep)
+	}
+	s := strings.ToLower(string(out))
+	if strings.Contains(s, "shift_jis") {
+		t.Errorf("stale template charset survived:\n%s", out)
+	}
+	if n := strings.Count(s, `charset="utf-8"`); n != 2 {
+		t.Errorf("UTF-8 charset count = %d, want document and template declarations:\n%s", n, out)
+	}
+	if head, meta, template := strings.Index(s, "<head>"), strings.Index(s, "<meta charset"), strings.Index(s, "<template>"); head >= meta || meta >= template {
+		t.Errorf("document charset must be inserted before template content (head=%d meta=%d template=%d)", head, meta, template)
+	}
+}
+
 func TestDoctypePreservedAndBannerFollowsIt(t *testing.T) {
 	// The browser hands the doctype back with the page, and everything sanitize
 	// does has to leave it at the top of the file. A doctype anywhere but first
