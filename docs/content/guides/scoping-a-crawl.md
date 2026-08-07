@@ -11,7 +11,7 @@ the crawl.
 ## Limit by count and depth
 
 ```bash
-# Stop after 200 pages
+# Attempt at most 200 page renders
 kage clone example.com --max-pages 200
 
 # Only follow links three hops from the seed
@@ -19,7 +19,8 @@ kage clone example.com --max-depth 3
 ```
 
 `--max-depth 0` (the default) means unlimited depth; `--max-pages 0` means
-unlimited pages. Combine them to put a hard ceiling on a run.
+unlimited attempts. Failed renders count toward the page cap. Combine the flags
+to put a hard ceiling on a run.
 
 ## Limit by path
 
@@ -29,10 +30,14 @@ To clone just one section of a site, restrict the crawl to a path prefix:
 kage clone example.com --scope-prefix /docs
 ```
 
-Only pages whose path starts with `/docs` are followed. Assets are still fetched
-from wherever the page references them, so the section renders correctly.
+Only `/docs` and pages below it are followed; a path such as `/documentation`
+does not match. Assets are still fetched from wherever the page references
+them, so the section renders correctly.
 
-To skip parts of a site, exclude path prefixes (repeatable):
+To skip parts of a site, exclude path prefixes (repeatable). An exclude matches
+that path and everything under it (`/archive` skips `/archive` and
+`/archive/2020`), but not a path containing the same text elsewhere
+(`/map/archive-index` is still crawled):
 
 ```bash
 kage clone example.com --exclude /archive --exclude /tags

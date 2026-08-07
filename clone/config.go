@@ -31,7 +31,7 @@ type Config struct {
 	Workers       int // page render workers
 	AssetWorkers  int // HTTP asset download workers
 	BrowserPages  int // Chrome page-pool size
-	MaxPages      int // stop after N pages (0 = unlimited)
+	MaxPages      int // attempt at most N page renders (0 = unlimited)
 	MaxDepth      int // BFS/DFS depth cap (0 = unlimited)
 	Traversal     string
 	MaxAssetBytes int64

@@ -114,11 +114,11 @@ The flags you'll actually reach for:
 | Flag | Default | Meaning |
 |------|---------|---------|
 | `-o, --out` | `$HOME/data/kage` | Output root; the mirror lands in `<out>/<host>/` |
-| `-p, --max-pages` | `0` | Stop after N pages (0 = no limit) |
+| `-p, --max-pages` | `0` | Attempt at most N page renders (0 = no limit); failed renders count toward the cap |
 | `-d, --max-depth` | `0` | How many links deep to follow (0 = no limit) |
-| `--scope-prefix` | | Only crawl paths starting with this prefix |
+| `--scope-prefix` | | Only crawl this path and its descendants, not similar path names |
 | `--subdomains` | `false` | Treat subdomains of the seed host as in scope |
-| `--exclude` | | Path prefixes to skip (repeatable) |
+| `--exclude` | | Paths and their descendants to skip (repeatable), not matching substrings elsewhere |
 | `--scroll` | `false` | Auto-scroll each page to trigger lazy loading |
 | `--workers` | `4` | How many pages to render at once |
 | `--no-robots` | `false` | Ignore `robots.txt` (be nice) |

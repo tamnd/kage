@@ -6,6 +6,14 @@ All notable changes to kage are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- `--exclude` and `--scope-prefix` now match complete path prefixes and their
+  descendants rather than arbitrary substrings. If you relied on the old
+  `--exclude` behaviour, pass the full path prefix.
+- `--max-pages` is documented as attempting at most N page renders; failed
+  renders count toward the cap.
+
 ### Fixed
 
 - `--resume` picks an interrupted crawl back up instead of doing nothing ([#36](https://github.com/tamnd/kage/issues/36)).
