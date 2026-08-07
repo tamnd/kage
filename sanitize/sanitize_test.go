@@ -167,6 +167,20 @@ func TestKeepMetaRefreshPlain(t *testing.T) {
 	}
 }
 
+func TestBaseElementRemovedAfterRewrite(t *testing.T) {
+	in := `<html><head><base href="https://example.com/live/"></head><body><a href="saved.html">saved</a></body></html>`
+	out, rep, err := Strip([]byte(in), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.ToLower(string(out)), "<base") {
+		t.Errorf("base element survived:\n%s", out)
+	}
+	if rep.BaseTagsRemoved != 1 {
+		t.Errorf("BaseTagsRemoved = %d, want 1", rep.BaseTagsRemoved)
+	}
+}
+
 func TestCharsetAddedWhenMissing(t *testing.T) {
 	// A page whose source declared its charset only in the HTTP header has no
 	// <meta charset>. The saved file must gain one so a reader does not fall back

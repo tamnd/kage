@@ -9,8 +9,9 @@ The authoritative, commit-level history lives in [`CHANGELOG.md`](https://github
 ## Unreleased
 
 - **Redirects resolve correctly.** Relative links use the post-redirect URL and
-  the document's first `<base href>`. On a cross-host redirect, references to
-  an out-of-scope destination remain absolute rather than being localised.
+  the document's first `<base href>`, which is removed after rewriting so it
+  cannot affect the saved page. On a cross-host redirect, references to an
+  out-of-scope destination remain absolute rather than being localised.
 
 ## v0.3.11
 

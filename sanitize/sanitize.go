@@ -49,6 +49,7 @@ type Report struct {
 	MetaRefreshRemoved  int
 	DeadLinksRemoved    int
 	CondCommentsRemoved int
+	BaseTagsRemoved     int
 	CharsetAdded        bool
 }
 
@@ -109,6 +110,13 @@ func clean(n *html.Node, opts Options, rep *Report) {
 		}
 		if c.Type == html.ElementNode {
 			switch c.DataAtom {
+			case atom.Base:
+				// Link rewriting has already consumed the document base. Keeping the
+				// element would re-root relative references against the live origin
+				// when the saved page is opened offline.
+				n.RemoveChild(c)
+				rep.BaseTagsRemoved++
+				continue
 			case atom.Script:
 				n.RemoveChild(c)
 				rep.ScriptsRemoved++
