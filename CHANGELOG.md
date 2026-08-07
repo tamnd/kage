@@ -6,6 +6,11 @@ All notable changes to kage are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `CONTRIBUTING.md` documents the development setup, test commands, and
+  expectations for focused pull requests.
+
 ### Fixed
 
 - `--resume` picks an interrupted crawl back up instead of doing nothing ([#36](https://github.com/tamnd/kage/issues/36)).
