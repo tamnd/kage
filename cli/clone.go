@@ -82,7 +82,7 @@ func newCloneCmd() *cobra.Command {
 	fs.BoolVar(&f.scroll, "scroll", false, "auto-scroll each page to trigger lazy loading")
 	fs.StringVar(&f.userAgent, "user-agent", clone.DefaultUserAgent, "User-Agent for asset and robots fetches")
 	fs.BoolVar(&f.subdomains, "subdomains", false, "treat subdomains of the seed host as in scope")
-	fs.StringVar(&f.scopePrefix, "scope-prefix", "", "only crawl pages whose path starts with this prefix")
+	fs.StringVar(&f.scopePrefix, "scope-prefix", "", "only crawl this path and its descendants, e.g. /doc does not match /documentation")
 	fs.StringSliceVar(&f.exclude, "exclude", nil, "path prefixes to skip, e.g. /archive (repeatable; matches the path and its descendants)")
 	fs.BoolVar(&f.noRobots, "no-robots", false, "ignore robots.txt (be careful and polite)")
 	fs.DurationVar(&f.crawlDelay, "crawl-delay", 0, "override robots.txt Crawl-delay between page starts (0 = use robots.txt)")
