@@ -6,6 +6,12 @@ weight: 40
 
 The authoritative, commit-level history lives in [`CHANGELOG.md`](https://github.com/tamnd/kage/blob/main/CHANGELOG.md) and on the [releases page](https://github.com/tamnd/kage/releases). This page summarises each version.
 
+## Unreleased
+
+- **Multi-page ZIM packs get a usable landing page.** Mirrors without a root
+  `index.html` list pages by title instead of opening an arbitrary first page;
+  single-page archives still open directly on their article ([#62](https://github.com/tamnd/kage/issues/62)).
+
 ## v0.3.11
 
 - **`go install ...@latest` works again.** The v0.3.9 antivirus fix replaced Rod's leakless dependency with a local stub. That kept the flagged helper out of `kage.exe`, but Go refuses versioned installation of a module containing a dependency-changing `replace` directive ([#72](https://github.com/tamnd/kage/issues/72)). Windows now launches Chrome through a small platform-specific launcher that never imports leakless. Other platforms keep Rod's launcher, the Windows binary remains free of the flagged helper, and the module no longer needs `replace`.
