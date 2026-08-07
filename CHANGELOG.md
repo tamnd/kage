@@ -8,6 +8,8 @@ All notable changes to kage are recorded here. The format follows
 
 ### Fixed
 
+- Non-UTF-8 `<meta charset>` and Content-Type charset declarations are
+  rewritten to `utf-8`, matching the encoding kage writes to disk ([#16](https://github.com/tamnd/kage/issues/16)).
 - `--resume` picks an interrupted crawl back up instead of doing nothing ([#36](https://github.com/tamnd/kage/issues/36)).
   `state.json` persisted only the visited set, and the frontier was rebuilt purely by re-rendering pages and following their links, which resume exists to avoid.
   So a resumed run found its seed already visited, `enqueuePage` turned it down, nothing was queued, and the run printed `pages 0` and exited successfully with most of the site still missing.
