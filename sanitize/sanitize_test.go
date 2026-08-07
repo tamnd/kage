@@ -180,6 +180,9 @@ func TestCharsetAddedWhenMissing(t *testing.T) {
 	if !rep.CharsetAdded {
 		t.Error("CharsetAdded = false, want true")
 	}
+	if rep.CharsetRewritten {
+		t.Error("CharsetRewritten = true for a missing declaration")
+	}
 	s := string(out)
 	if !strings.Contains(strings.ToLower(s), `<meta charset="utf-8"/>`) {
 		t.Errorf("expected an injected meta charset:\n%s", s)
@@ -266,10 +269,24 @@ func TestMobileReadableSkipsExistingViewport(t *testing.T) {
 }
 
 func TestCharsetNotDuplicated(t *testing.T) {
-	// A page that already declares a charset, in either form, is left alone.
+	in := `<html><head><meta charset="utf-8"><title>x</title></head><body></body></html>`
+	out, rep, err := Strip([]byte(in), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.CharsetAdded || rep.CharsetRewritten {
+		t.Errorf("unchanged UTF-8 declaration reported a change: %+v", rep)
+	}
+	if n := strings.Count(strings.ToLower(string(out)), "charset"); n != 1 {
+		t.Errorf("charset count = %d, want 1:\n%s", n, out)
+	}
+}
+
+func TestCharsetRewritesNonUTF8(t *testing.T) {
 	cases := []string{
-		`<html><head><meta charset="utf-8"><title>x</title></head><body></body></html>`,
-		`<html><head><meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1"><title>x</title></head><body></body></html>`,
+		`<html><head><meta charset="ISO-8859-1"><title>x</title></head><body></body></html>`,
+		`<html><head><meta http-equiv="Content-Type" content="text/html; charset = windows-1252; foo=bar"><title>x</title></head><body></body></html>`,
+		`<html><head><title>x</title></head><body><meta charset="shift_jis"></body></html>`,
 	}
 	for _, in := range cases {
 		out, rep, err := Strip([]byte(in), Options{})
@@ -277,11 +294,41 @@ func TestCharsetNotDuplicated(t *testing.T) {
 			t.Fatal(err)
 		}
 		if rep.CharsetAdded {
-			t.Errorf("CharsetAdded = true for a page that already declares one:\n%s", in)
+			t.Errorf("CharsetAdded = true for an existing declaration:\n%s", in)
 		}
-		if n := strings.Count(strings.ToLower(string(out)), "charset"); n != 1 {
+		if !rep.CharsetRewritten {
+			t.Errorf("CharsetRewritten = false for:\n%s", in)
+		}
+		s := strings.ToLower(string(out))
+		for _, stale := range []string{"iso-8859-1", "windows-1252", "shift_jis"} {
+			if strings.Contains(s, stale) {
+				t.Errorf("stale charset %q survived:\n%s", stale, out)
+			}
+		}
+		if n := strings.Count(s, "charset"); n != 1 {
 			t.Errorf("charset count = %d, want 1:\n%s", n, out)
 		}
+	}
+}
+
+func TestCharsetInTemplateDoesNotDeclareDocumentEncoding(t *testing.T) {
+	in := `<html><head><template><meta charset="shift_jis"></template><title>x</title></head><body></body></html>`
+	out, rep, err := Strip([]byte(in), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rep.CharsetAdded || !rep.CharsetRewritten {
+		t.Errorf("template declaration should be rewritten without satisfying the document: %+v", rep)
+	}
+	s := strings.ToLower(string(out))
+	if strings.Contains(s, "shift_jis") {
+		t.Errorf("stale template charset survived:\n%s", out)
+	}
+	if n := strings.Count(s, `charset="utf-8"`); n != 2 {
+		t.Errorf("UTF-8 charset count = %d, want document and template declarations:\n%s", n, out)
+	}
+	if head, meta, template := strings.Index(s, "<head>"), strings.Index(s, "<meta charset"), strings.Index(s, "<template>"); head >= meta || meta >= template {
+		t.Errorf("document charset must be inserted before template content (head=%d meta=%d template=%d)", head, meta, template)
 	}
 }
 
