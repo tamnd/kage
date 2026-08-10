@@ -19,6 +19,7 @@ import (
 	"github.com/tamnd/kage/sanitize"
 	"github.com/tamnd/kage/urlx"
 	"golang.org/x/net/html"
+	"golang.org/x/net/html/atom"
 	"golang.org/x/time/rate"
 )
 
@@ -315,6 +316,13 @@ func (c *Cloner) processPage(ctx context.Context, j pageItem) {
 		return
 	}
 
+	// Resolve references against the post-redirect URL (and any <base href>),
+	// but keep writing the page under the discovered URL so existing offline
+	// links that pointed at /old still resolve. Cross-host redirects leave the
+	// resolve base as the final location for relative refs; scope checks still
+	// use that absolute URL.
+	resolveBase := pageResolveBase(j.u, res.FinalURL, root)
+
 	localFile := urlx.LocalPath(c.seedHost, j.u, urlx.Page, c.cfg.Reserved)
 	fileDir := urlx.Dir(localFile)
 
@@ -337,7 +345,7 @@ func (c *Cloner) processPage(ctx context.Context, j pageItem) {
 		}
 	}
 
-	asset.RewriteHTML(root, j.u, sink)
+	asset.RewriteHTML(root, resolveBase, sink)
 	sanitize.CleanTree(root, sanitize.Options{
 		KeepNoscript:   c.cfg.KeepNoscript,
 		MobileReadable: c.cfg.MobileReadable,
@@ -365,6 +373,55 @@ func (c *Cloner) waitForCrawlDelay(ctx context.Context) bool {
 	}
 
 	return c.crawlLimiter.Wait(ctx) == nil
+}
+
+// pageResolveBase picks the URL against which relative references on a rendered
+// page should resolve. Preference order:
+//  1. A document <base href> (the live page's own base);
+//  2. The browser's final URL after redirects;
+//  3. The URL that was enqueued.
+//
+// The page is still written under the enqueued URL so offline links discovered
+// as /old keep working when the server redirected /old → /new.
+func pageResolveBase(enqueued *url.URL, finalURL string, root *html.Node) *url.URL {
+	base := enqueued
+	if finalURL != "" {
+		if u, err := url.Parse(finalURL); err == nil && u.Scheme != "" && u.Host != "" {
+			// Drop fragment; keep query/path as the browser shows them.
+			u.Fragment = ""
+			base = u
+		}
+	}
+	if href := documentBaseHref(root); href != "" {
+		if u, err := urlx.Normalize(base, href); err == nil {
+			return u
+		}
+	}
+	return base
+}
+
+// documentBaseHref returns the first <base href> in document order, or "".
+func documentBaseHref(root *html.Node) string {
+	var found string
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if found != "" || n == nil {
+			return
+		}
+		if n.Type == html.ElementNode && n.DataAtom == atom.Base {
+			for _, a := range n.Attr {
+				if strings.EqualFold(a.Key, "href") && strings.TrimSpace(a.Val) != "" {
+					found = strings.TrimSpace(a.Val)
+					return
+				}
+			}
+		}
+		for c := n.FirstChild; c != nil && found == ""; c = c.NextSibling {
+			walk(c)
+		}
+	}
+	walk(root)
+	return found
 }
 
 // processAsset downloads one asset, rewriting CSS references on the way, and

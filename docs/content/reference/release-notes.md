@@ -18,6 +18,11 @@ The authoritative, commit-level history lives in [`CHANGELOG.md`](https://github
   single-page archives still open directly on their article ([#62](https://github.com/tamnd/kage/issues/62)).
 - **Saved pages declare their real encoding.** Non-UTF-8 charset metadata is
   rewritten to UTF-8, matching the bytes kage writes to disk ([#16](https://github.com/tamnd/kage/issues/16)).
+- **Redirects resolve correctly.** Relative links use the post-redirect URL and
+  the document's first `<base href>`. After rewriting, every base `href` is
+  removed so it cannot affect the saved page, while a base `target` is
+  preserved. On a cross-host redirect, references to an out-of-scope
+  destination remain absolute rather than being localised.
 
 ## v0.3.11
 
