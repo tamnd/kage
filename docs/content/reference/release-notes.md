@@ -12,6 +12,9 @@ The authoritative, commit-level history lives in [`CHANGELOG.md`](https://github
   `--scope-prefix` match a path and its descendants without catching unrelated
   names that merely contain the same text. `--max-pages` now accurately says
   that failed render attempts count toward its cap.
+- **Multi-page ZIM packs get a usable landing page.** Mirrors without a root
+  `index.html` list pages by title instead of opening an arbitrary first page;
+  single-page archives still open directly on their article ([#62](https://github.com/tamnd/kage/issues/62)).
 
 ## v0.3.11
 

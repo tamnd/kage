@@ -3,6 +3,7 @@ package pack
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
@@ -11,11 +12,26 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/tamnd/kage/urlx"
 	"github.com/tamnd/kage/zim"
 )
+
+// writeFiles creates rel→content files under root.
+func writeFiles(t *testing.T, root string, files map[string]string) {
+	t.Helper()
+	for rel, body := range files {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
 
 // writeMirror lays down a small kage-style mirror under a temp dir and returns
 // the host dir.
@@ -233,6 +249,102 @@ func TestPickMainPage(t *testing.T) {
 		if got := pickMainPage(c.in); got != c.want {
 			t.Errorf("pickMainPage(%v) = %q, want %q", c.in, got, c.want)
 		}
+	}
+}
+
+// TestSyntheticIndexWhenNoRootIndex covers issue #62: packing a host that has
+// HTML pages but no root index.html must still open on a browsable landing page.
+func TestSyntheticIndexWhenNoRootIndex(t *testing.T) {
+	dir := t.TempDir()
+	host := filepath.Join(dir, "en.wikipedia.org")
+	writeFiles(t, host, map[string]string{
+		"wiki/1990s/index.html": "<!doctype html><title>The 1990s - Wikipedia</title><h1>1990s</h1>",
+		"wiki/2000s/index.html": "<!doctype html><title>The 2000s - Wikipedia</title><h1>2000s</h1>",
+	})
+	out := filepath.Join(dir, "wiki.zim")
+	if _, _, err := BuildZIM(host, ZIMOptions{Out: out, Date: "2026-07-31"}); err != nil {
+		t.Fatalf("BuildZIM: %v", err)
+	}
+	r, err := zim.Open(out)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer func() { _ = r.Close() }()
+	mp, err := r.MainPage()
+	if err != nil {
+		t.Fatalf("MainPage: %v", err)
+	}
+	body := string(mp.Data)
+	if !strings.Contains(body, "wiki/1990s/index.html") || !strings.Contains(body, "wiki/2000s/index.html") {
+		t.Errorf("synthetic index missing page links:\n%s", body)
+	}
+	if !strings.Contains(body, "The 1990s - Wikipedia") || !strings.Contains(body, "The 2000s - Wikipedia") {
+		t.Errorf("synthetic index missing page titles:\n%s", body)
+	}
+	metadataTitle, err := r.Get(zim.NamespaceMetadata, "Title")
+	if err != nil {
+		t.Fatalf("M/Title: %v", err)
+	}
+	if got := string(metadataTitle.Data); got != "The 1990s - Wikipedia" {
+		t.Errorf("M/Title = %q, want real main-page title", got)
+	}
+	// Opening "/" via the handler must redirect to the synthetic index.
+	h := Handler(r)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusFound {
+		t.Fatalf("GET / status = %d, want 302; body %q", rec.Code, rec.Body.String())
+	}
+	if loc := rec.Header().Get("Location"); loc != "/index.html" {
+		t.Errorf("GET / Location = %q, want /index.html", loc)
+	}
+}
+
+func TestSinglePageDoesNotGetSyntheticIndex(t *testing.T) {
+	dir := t.TempDir()
+	host := filepath.Join(dir, "example.com")
+	writeFiles(t, host, map[string]string{
+		"some/article/index.html": "<!doctype html><title>Only article</title><h1>Article</h1>",
+	})
+	out := filepath.Join(dir, "article.zim")
+	if _, _, err := BuildZIM(host, ZIMOptions{Out: out, Date: "2026-07-31"}); err != nil {
+		t.Fatalf("BuildZIM: %v", err)
+	}
+	r, err := zim.Open(out)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer func() { _ = r.Close() }()
+	main, err := r.MainPage()
+	if err != nil {
+		t.Fatalf("MainPage: %v", err)
+	}
+	if main.URL != "some/article/index.html" {
+		t.Errorf("main page = %q, want the only article", main.URL)
+	}
+	title, err := r.Get(zim.NamespaceMetadata, "Title")
+	if err != nil {
+		t.Fatalf("M/Title: %v", err)
+	}
+	if got := string(title.Data); got != "Only article" {
+		t.Errorf("M/Title = %q, want %q", got, "Only article")
+	}
+}
+
+func TestSyntheticIndexIsBounded(t *testing.T) {
+	pages := make([]string, syntheticIndexPageLimit+1)
+	titles := make(map[string]string, len(pages))
+	for i := range pages {
+		pages[i] = fmt.Sprintf("page/%04d/index.html", i)
+		titles[pages[i]] = fmt.Sprintf("Page %04d", i)
+	}
+	body := string(syntheticIndexHTML(pages, titles, "Many pages"))
+	if got := strings.Count(body, "<li>"); got != syntheticIndexPageLimit {
+		t.Errorf("list entries = %d, want %d", got, syntheticIndexPageLimit)
+	}
+	if !strings.Contains(body, "And 1 more page.") {
+		t.Errorf("synthetic index missing remainder note:\n%s", body)
 	}
 }
 

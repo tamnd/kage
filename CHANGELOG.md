@@ -29,6 +29,9 @@ All notable changes to kage are recorded here. The format follows
 
 ### Fixed
 
+- Packing a mirror with multiple HTML pages but no root `index.html` creates a
+  bounded, title-sorted landing page, while a single-page archive still opens
+  directly on its article and keeps that article's title metadata ([#62](https://github.com/tamnd/kage/issues/62)).
 - `--resume` picks an interrupted crawl back up instead of doing nothing ([#36](https://github.com/tamnd/kage/issues/36)).
   `state.json` persisted only the visited set, and the frontier was rebuilt purely by re-rendering pages and following their links, which resume exists to avoid.
   So a resumed run found its seed already visited, `enqueuePage` turned it down, nothing was queued, and the run printed `pages 0` and exited successfully with most of the site still missing.
