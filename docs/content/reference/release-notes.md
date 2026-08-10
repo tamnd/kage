@@ -10,8 +10,9 @@ The authoritative, commit-level history lives in [`CHANGELOG.md`](https://github
 
 - **Crawl path controls use path boundaries.** `--exclude` and
   `--scope-prefix` match a path and its descendants without catching unrelated
-  names that merely contain the same text. `--max-pages` now accurately says
-  that failed render attempts count toward its cap.
+  names that merely contain the same text. `--max-pages` is now described
+  accurately as a cap on queued page URLs rather than on renders, so a page that
+  fails, that `robots.txt` disallows, or that is not HTML still spends its slot.
 - **Multi-page ZIM packs get a usable landing page.** Mirrors without a root
   `index.html` list pages by title instead of opening an arbitrary first page;
   single-page archives still open directly on their article ([#62](https://github.com/tamnd/kage/issues/62)).

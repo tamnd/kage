@@ -28,10 +28,14 @@ type Config struct {
 	OutDir   string // output root; the mirror lands in <OutDir>/<host>/
 	Reserved string // reserved dir name for assets and state (default "_kage")
 
-	Workers       int // page render workers
-	AssetWorkers  int // HTTP asset download workers
-	BrowserPages  int // Chrome page-pool size
-	MaxPages      int // attempt at most N page renders (0 = unlimited)
+	Workers      int // page render workers
+	AssetWorkers int // HTTP asset download workers
+	BrowserPages int // Chrome page-pool size
+	// MaxPages caps how many page URLs are queued, not how many render (0 =
+	// unlimited). The budget is spent in enqueuePage, so a page that fails,
+	// that robots.txt disallows, or that turns out not to be HTML has already
+	// taken its slot by the time the crawl finds out.
+	MaxPages      int
 	MaxDepth      int // BFS/DFS depth cap (0 = unlimited)
 	Traversal     string
 	MaxAssetBytes int64

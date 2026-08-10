@@ -11,7 +11,7 @@ the crawl.
 ## Limit by count and depth
 
 ```bash
-# Attempt at most 200 page renders
+# Queue at most 200 page URLs
 kage clone example.com --max-pages 200
 
 # Only follow links three hops from the seed
@@ -19,8 +19,14 @@ kage clone example.com --max-depth 3
 ```
 
 `--max-depth 0` (the default) means unlimited depth; `--max-pages 0` means
-unlimited attempts. Failed renders count toward the page cap. Combine the flags
-to put a hard ceiling on a run.
+unlimited pages. Combine the flags to put a hard ceiling on a run.
+
+The `--max-pages` budget is spent when a URL is queued, not when it renders, so
+a run can save fewer pages than the number you asked for. A page that fails to
+render, that `robots.txt` disallows, or that turns out not to be HTML has
+already taken its slot by the time kage finds out. Pages discovered after the
+budget runs out are still written to `state.json`, so raising the cap and
+running again continues where the last run stopped rather than starting over.
 
 ## Limit by path
 

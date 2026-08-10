@@ -18,8 +18,11 @@ All notable changes to kage are recorded here. The format follows
 - `--exclude` and `--scope-prefix` now match complete path prefixes and their
   descendants rather than arbitrary substrings. If you relied on the old
   `--exclude` behaviour, pass the full path prefix.
-- `--max-pages` is documented as attempting at most N page renders; failed
-  renders count toward the cap.
+- `--max-pages` is documented as a cap on how many page URLs are queued rather
+  than how many render. The budget is spent in `enqueuePage`, so a page that
+  fails to render, that `robots.txt` disallows, or that turns out not to be HTML
+  has already taken its slot by the time kage finds out, and a run can save
+  fewer pages than the number asked for.
 
 ### Deprecated
 

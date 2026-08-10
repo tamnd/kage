@@ -69,7 +69,7 @@ func newCloneCmd() *cobra.Command {
 	fs.IntVar(&f.workers, "workers", 4, "concurrent page render workers")
 	fs.IntVar(&f.assetWorkers, "asset-workers", 8, "concurrent asset download workers")
 	fs.IntVar(&f.browserPages, "browser-pages", 4, "Chrome page-pool size")
-	fs.IntVarP(&f.maxPages, "max-pages", "p", 0, "attempt at most N page renders (0 = unlimited)")
+	fs.IntVarP(&f.maxPages, "max-pages", "p", 0, "queue at most N page URLs (0 = unlimited)")
 	fs.IntVarP(&f.maxDepth, "max-depth", "d", 0, "link-follow depth cap (0 = unlimited)")
 	fs.StringVar(&f.traversal, "traversal", "bfs", "frontier order (ignored; the crawl is always breadth-first)")
 	_ = fs.MarkDeprecated("traversal", "the crawl is always breadth-first; this flag was never read")

@@ -35,7 +35,7 @@ images, and fonts, and writes a browsable mirror to `<out>/<host>/`.
 
 | Flag | Default | Meaning |
 |------|---------|---------|
-| `-p, --max-pages` | `0` | Attempt at most N page renders (0 = unlimited); failures count toward the cap |
+| `-p, --max-pages` | `0` | Queue at most N page URLs (0 = unlimited); pages that fail, are disallowed by `robots.txt`, or turn out not to be HTML still count |
 | `-d, --max-depth` | `0` | Link-follow depth cap (0 = unlimited) |
 | `--scope-prefix` | | Only crawl the path prefix and its descendants, not similar path names |
 | `--subdomains` | `false` | Treat subdomains of the seed host as in scope |
