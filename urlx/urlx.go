@@ -204,7 +204,7 @@ func Key(u *url.URL) string { return u.String() }
 type ScopeConfig struct {
 	IncludeSubdomains bool
 	ScopePrefix       string   // only crawl paths under this prefix, e.g. "/docs/"
-	ExcludePaths      []string // skip any path containing one of these substrings
+	ExcludePaths      []string // skip any path that equals or is under one of these prefixes
 }
 
 // SameSite reports whether u belongs to the seed's site: the same host, or a
@@ -253,15 +253,38 @@ func InScope(seed, u *url.URL, cfg ScopeConfig) bool {
 	if !SameSite(seed, u, cfg.IncludeSubdomains) {
 		return false
 	}
-	if cfg.ScopePrefix != "" && !strings.HasPrefix(u.Path, cfg.ScopePrefix) {
+	if cfg.ScopePrefix != "" && !pathHasPrefix(u.Path, cfg.ScopePrefix) {
 		return false
 	}
 	for _, ex := range cfg.ExcludePaths {
-		if ex != "" && strings.Contains(u.Path, ex) {
+		if ex != "" && pathHasPrefix(u.Path, ex) {
 			return false
 		}
 	}
 	return true
+}
+
+// pathHasPrefix reports whether path equals prefix or is a descendant of it.
+// Both sides are treated as URL paths: a prefix of "/api" matches "/api",
+// "/api/", and "/api/v1", but not "/apiv1" or "/map/api". A prefix without a
+// leading slash is normalised to one so CLI prefixes such as "api" behave like
+// "/api" for both --scope-prefix and --exclude.
+func pathHasPrefix(path, prefix string) bool {
+	if prefix == "" {
+		return false
+	}
+	if !strings.HasPrefix(prefix, "/") {
+		prefix = "/" + prefix
+	}
+	// Exact match, or prefix followed by '/' so "/api" does not match "/apiv1".
+	if path == prefix || path == strings.TrimSuffix(prefix, "/") {
+		return true
+	}
+	p := prefix
+	if !strings.HasSuffix(p, "/") {
+		p += "/"
+	}
+	return strings.HasPrefix(path, p)
 }
 
 // LikelyPage reports whether an <a href> target should be rendered as a page
