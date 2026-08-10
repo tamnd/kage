@@ -21,6 +21,12 @@ All notable changes to kage are recorded here. The format follows
 - `--max-pages` is documented as attempting at most N page renders; failed
   renders count toward the cap.
 
+### Deprecated
+
+- `--traversal` remains accepted for existing scripts but is now marked
+  deprecated because it was never read; crawls are always breadth-first. The
+  flag is planned for removal in the next minor release.
+
 ### Fixed
 
 - `--resume` picks an interrupted crawl back up instead of doing nothing ([#36](https://github.com/tamnd/kage/issues/36)).

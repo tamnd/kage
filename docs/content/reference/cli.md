@@ -40,7 +40,7 @@ images, and fonts, and writes a browsable mirror to `<out>/<host>/`.
 | `--scope-prefix` | | Only crawl the path prefix and its descendants, not similar path names |
 | `--subdomains` | `false` | Treat subdomains of the seed host as in scope |
 | `--exclude` | | Path prefixes to skip (repeatable); matches the path and its descendants, not substrings elsewhere |
-| `--traversal` | `bfs` | Frontier order: `bfs` or `dfs` |
+| `--traversal` | `bfs` | Deprecated and ignored; the crawl is always breadth-first |
 
 ### Politeness
 
