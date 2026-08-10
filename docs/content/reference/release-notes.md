@@ -16,6 +16,8 @@ The authoritative, commit-level history lives in [`CHANGELOG.md`](https://github
 - **Multi-page ZIM packs get a usable landing page.** Mirrors without a root
   `index.html` list pages by title instead of opening an arbitrary first page;
   single-page archives still open directly on their article ([#62](https://github.com/tamnd/kage/issues/62)).
+- **Saved pages declare their real encoding.** Non-UTF-8 charset metadata is
+  rewritten to UTF-8, matching the bytes kage writes to disk ([#16](https://github.com/tamnd/kage/issues/16)).
 
 ## v0.3.11
 
