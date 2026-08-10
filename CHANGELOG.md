@@ -37,6 +37,13 @@ All notable changes to kage are recorded here. The format follows
   directly on its article and keeps that article's title metadata ([#62](https://github.com/tamnd/kage/issues/62)).
 - Non-UTF-8 `<meta charset>` and Content-Type charset declarations are
   rewritten to `utf-8`, matching the encoding kage writes to disk ([#16](https://github.com/tamnd/kage/issues/16)).
+  Rewriting covers the whole document, but whether the page *declares* an
+  encoding is answered from `<head>` alone. A charset meta that Chrome left in
+  `<body>` was otherwise treated as the document's declaration, so nothing was
+  inserted into `<head>` and the only declaration sat past the 1024 bytes a
+  reader pre-scans, which is the mojibake #16 is about.
+  A legacy `content="charset=iso-8859-1"` with no media type is now rewritten
+  too, instead of being left to contradict the injected UTF-8 declaration.
 - Relative links on redirected pages resolve against the browser's final URL
   and the document's first `<base href>`, while the page remains saved under
   the URL that was originally discovered. Consumed `href` attributes are

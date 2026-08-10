@@ -323,7 +323,9 @@ func TestCharsetRewritesNonUTF8(t *testing.T) {
 	cases := []string{
 		`<html><head><meta charset="ISO-8859-1"><title>x</title></head><body></body></html>`,
 		`<html><head><meta http-equiv="Content-Type" content="text/html; charset = windows-1252; foo=bar"><title>x</title></head><body></body></html>`,
-		`<html><head><title>x</title></head><body><meta charset="shift_jis"></body></html>`,
+		// A Content-Type with no media type at all, which is malformed but
+		// appears in the wild.
+		`<html><head><meta http-equiv="Content-Type" content="charset=iso-8859-1"><title>x</title></head><body></body></html>`,
 	}
 	for _, in := range cases {
 		out, rep, err := Strip([]byte(in), Options{})
@@ -345,6 +347,35 @@ func TestCharsetRewritesNonUTF8(t *testing.T) {
 		if n := strings.Count(s, "charset"); n != 1 {
 			t.Errorf("charset count = %d, want 1:\n%s", n, out)
 		}
+	}
+}
+
+// A charset meta that ended up in <body> is rewritten, but it does not answer
+// the question <head> has to answer: readers pre-scan only the first 1024 bytes,
+// so a declaration stranded further down is never seen (issue #16).
+func TestCharsetInBodyStillDeclaresInHead(t *testing.T) {
+	in := `<html><head><title>x</title></head><body><meta charset="shift_jis"><p>` +
+		strings.Repeat("padding ", 400) + `</p></body></html>`
+	out, rep, err := Strip([]byte(in), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rep.CharsetAdded {
+		t.Errorf("CharsetAdded = false, so <head> declares nothing: %+v", rep)
+	}
+	if !rep.CharsetRewritten {
+		t.Errorf("CharsetRewritten = false, so the body declaration is still stale: %+v", rep)
+	}
+	s := strings.ToLower(string(out))
+	if strings.Contains(s, "shift_jis") {
+		t.Errorf("stale charset survived:\n%s", out)
+	}
+	if n := strings.Count(s, "charset"); n != 2 {
+		t.Errorf("charset count = %d, want 2 (head declaration plus the rewritten body one):\n%s", n, out)
+	}
+	// The declaration has to land inside the window a reader actually scans.
+	if i := strings.Index(s, "charset"); i < 0 || i >= 1024 {
+		t.Errorf("first charset at byte %d, outside the 1024-byte prescan window:\n%s", i, out)
 	}
 }
 

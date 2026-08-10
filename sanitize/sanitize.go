@@ -277,8 +277,14 @@ func ensureCharset(root *html.Node) (added, rewritten bool) {
 	if head == nil {
 		return false, false
 	}
+	// Rewriting stale values is a whole-document job: a declaration Chrome moved
+	// into <body> still contradicts the UTF-8 bytes kage writes.
 	fix := fixCharsetMetas(root)
-	if fix.declared {
+	// Whether the document *declares* an encoding is a <head> question, though.
+	// Readers pre-scan only the first 1024 bytes, so a meta stranded in <body>
+	// is never found; treating it as a declaration left the saved page with
+	// nothing a reader could act on, which is the mojibake of issue #16.
+	if headDeclaresCharset(head) {
 		return false, fix.rewritten
 	}
 	meta := &html.Node{
@@ -332,10 +338,42 @@ func fixCharsetMetas(n *html.Node) charsetMetaFix {
 
 // rewriteContentTypeCharset rewrites a charset parameter while preserving the
 // media type and other parameters. It accepts optional whitespace around '='.
+// headDeclaresCharset reports whether <head> itself carries an encoding
+// declaration, in either the <meta charset> or the legacy Content-Type form.
+// Content inside <template> is inert and does not count.
+func headDeclaresCharset(head *html.Node) bool {
+	var walk func(*html.Node) bool
+	walk = func(n *html.Node) bool {
+		if n.Type == html.ElementNode && n.DataAtom == atom.Meta {
+			if strings.TrimSpace(attr(n, "charset")) != "" {
+				return true
+			}
+			if strings.EqualFold(attr(n, "http-equiv"), "content-type") &&
+				strings.Contains(strings.ToLower(attr(n, "content")), "charset=") {
+				return true
+			}
+		}
+		if n.Type == html.ElementNode && n.DataAtom == atom.Template {
+			return false
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			if walk(c) {
+				return true
+			}
+		}
+		return false
+	}
+	return walk(head)
+}
+
 func rewriteContentTypeCharset(content string) (string, charsetMetaFix) {
 	var fix charsetMetaFix
 	parts := strings.Split(content, ";")
-	for i := 1; i < len(parts); i++ {
+	// From 0, not 1: malformed markup writes content="charset=iso-8859-1" with
+	// no media type, and skipping the first field left that declaration in the
+	// saved page contradicting the UTF-8 bytes. A real media type has no "=",
+	// so the Cut below rejects it on its own.
+	for i := range parts {
 		key, value, ok := strings.Cut(parts[i], "=")
 		if !ok || !strings.EqualFold(strings.TrimSpace(key), "charset") {
 			continue
