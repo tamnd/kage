@@ -42,9 +42,16 @@ All notable changes to kage are recorded here. The format follows
   the URL that was originally discovered. Consumed `href` attributes are
   removed from every `<base>` so they cannot re-root rewritten links when the
   saved page opens, while `target` behavior is preserved.
-  After a cross-host redirect,
-  relative references resolve to the other host and remain absolute when that
-  host is outside the crawl scope, so those resources are not localised.
+  A redirect that leaves the crawl scope no longer takes the page's links with
+  it. `urlx.SameSite` matches hostnames exactly, so a seed redirecting apex→www
+  (or www→apex) resolved every relative link onto a host the scope rejects:
+  the links stayed absolute, nothing was enqueued, and the crawl saved the seed
+  page and stopped. Assets are matched on the registrable domain and kept
+  downloading, so the run ended with a complete-looking single page and no
+  error. The resolution base now falls back to the document `<base href>`, and
+  then to the enqueued URL, whenever the redirect target is out of scope.
+  A redirect that genuinely leaves the site is unchanged: those references
+  resolve to the other host and stay absolute, so they are not localised.
 - `--resume` picks an interrupted crawl back up instead of doing nothing ([#36](https://github.com/tamnd/kage/issues/36)).
   `state.json` persisted only the visited set, and the frontier was rebuilt purely by re-rendering pages and following their links, which resume exists to avoid.
   So a resumed run found its seed already visited, `enqueuePage` turned it down, nothing was queued, and the run printed `pages 0` and exited successfully with most of the site still missing.

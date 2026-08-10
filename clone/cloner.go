@@ -321,7 +321,7 @@ func (c *Cloner) processPage(ctx context.Context, j pageItem) {
 	// links that pointed at /old still resolve. Cross-host redirects leave the
 	// resolve base as the final location for relative refs; scope checks still
 	// use that absolute URL.
-	resolveBase := pageResolveBase(j.u, res.FinalURL, root)
+	resolveBase := scopedResolveBase(c.seed, j.u, res.FinalURL, root, c.cfg.scope())
 
 	localFile := urlx.LocalPath(c.seedHost, j.u, urlx.Page, c.cfg.Reserved)
 	fileDir := urlx.Dir(localFile)
@@ -383,6 +383,9 @@ func (c *Cloner) waitForCrawlDelay(ctx context.Context) bool {
 //
 // The page is still written under the enqueued URL so offline links discovered
 // as /old keep working when the server redirected /old → /new.
+//
+// Callers should prefer scopedResolveBase, which keeps an off-scope redirect
+// from taking the page's links with it.
 func pageResolveBase(enqueued *url.URL, finalURL string, root *html.Node) *url.URL {
 	base := enqueued
 	if finalURL != "" {
@@ -398,6 +401,31 @@ func pageResolveBase(enqueued *url.URL, finalURL string, root *html.Node) *url.U
 		}
 	}
 	return base
+}
+
+// scopedResolveBase is pageResolveBase constrained to the crawl scope.
+//
+// urlx.SameSite matches hostnames exactly, so a seed that redirects apex→www
+// (or www→apex) lands on a host the scope rejects. Resolving the page's links
+// against that host would put every one of them out of scope: they stay
+// absolute, nothing is enqueued, and the crawl saves the seed page and stops.
+// The failure is quiet because assets are matched with SameRegistrableDomain
+// and still download, so the run ends with a complete-looking single page.
+//
+// A redirect that genuinely leaves the site (example.com/go/x → partner.com)
+// keeps the old behaviour: those links are out of scope either way, and they
+// are re-fetched and re-redirected if reached on their own.
+func scopedResolveBase(seed, enqueued *url.URL, finalURL string, root *html.Node, scope urlx.ScopeConfig) *url.URL {
+	base := pageResolveBase(enqueued, finalURL, root)
+	if urlx.InScope(seed, base, scope) {
+		return base
+	}
+	// Drop the redirect target but keep any document <base href>, which is the
+	// page's own statement about where its links point.
+	if b := pageResolveBase(enqueued, "", root); urlx.InScope(seed, b, scope) {
+		return b
+	}
+	return enqueued
 }
 
 // documentBaseHref returns the first <base href> in document order, or "".
